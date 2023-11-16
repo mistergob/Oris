@@ -153,7 +153,7 @@ body{
     align-items: left;
     justify-content: center;
     background-color: var(--bgColorMenu);
-    transform: translateX(-200px)
+    transform: translateX(200px)
 }
 
 .menu__item{
