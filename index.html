@@ -1,291 +1,473 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
+  <title>SPHAIRA — Agenda</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>ATMOS</title>
-  <meta name="color-scheme" content="dark light">
-  <!-- Police futuriste -->
-  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+
+  <!-- Polices ATMOS -->
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Outfit:wght@300;400;600&display=swap" rel="stylesheet"/>
+
   <style>
     :root{
-      /* Thème */
-      --primary: #00eaff;
-      --primary-2: #8a2be2;
-      --text: #e6f7ff;
-      --muted: #9fb3c8;
+      /* Thème ATMOS */
+      --primary:#00eaff;          /* cyan néon */
+      --accent:#8a2be2;           /* violet néon */
+      --text:#e6f7ff;
+      --muted:#9fb3c8;
 
-      /* Fond spatial (image + dégradés nébuleux) */
-      --space-img: url("https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?q=80&w=1920&auto=format&fit=crop");
-      --bg-a: #05060d;
-      --bg-b: #0b1430;
-      --bg-c: #00182a;
+      /* Fond spatial */
+      --space-img:url("https://images.unsplash.com/photo-1444703686981-a3abbc4d4fe3?q=80&w=1920&auto=format&fit=crop");
+      --bg-a:#05060d; --bg-b:#0b1430; --bg-c:#00182a;
 
       /* Effets */
       --glow: drop-shadow(0 0 8px rgba(0,234,255,.55)) drop-shadow(0 0 18px rgba(138,43,226,.35));
       --ring: 0 0 0 3px rgba(0,234,255,.35), 0 0 24px rgba(0,234,255,.25);
+
+      /* Fines bordures/verre */
+      --grid:rgba(255,255,255,.12);
     }
 
     *{box-sizing:border-box}
     html,body{height:100%}
     body{
-      margin:0;
-      font-family: Outfit, system-ui, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-      color:var(--text);
+      margin:0;color:var(--text);
+      font-family: Outfit, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
       background:
         radial-gradient(1200px 800px at 75% 10%, rgba(138,43,226,.18), transparent 60%),
         radial-gradient(900px 700px at 15% 85%, rgba(0,234,255,.12), transparent 55%),
-        radial-gradient(700px 500px at 80% 80%, rgba(0, 40, 80,.35), transparent 60%),
+        radial-gradient(700px 500px at 80% 80%, rgba(0,40,80,.35), transparent 60%),
         linear-gradient(120deg, var(--bg-a), var(--bg-b) 40%, var(--bg-c));
-      overflow: hidden;
+      overflow-x:hidden;
     }
+    /* Étoiles + image de fond (décor) */
     body::before{
-      content:"";
-      position:fixed; inset:0;
+      content:""; position:fixed; inset:0; pointer-events:none; mix-blend-mode:screen; opacity:.15;
       background:
         var(--space-img) center/cover no-repeat,
         radial-gradient(1px 1px at 10% 20%, #fff 40%, transparent 41%),
         radial-gradient(1px 1px at 30% 80%, #fff 40%, transparent 41%),
         radial-gradient(1px 1px at 70% 30%, #fff 40%, transparent 41%),
         radial-gradient(1px 1px at 90% 60%, #fff 40%, transparent 41%);
-      mix-blend-mode: screen;
-      opacity:.15;
-      pointer-events:none;
       animation: twinkle 14s linear infinite;
+      z-index:-1;
     }
-    @keyframes twinkle{
-      0%,100%{opacity:.12}
-      50%{opacity:.22}
-    }
-
-    .wrap{
-      position:relative;
-      height:100dvh;
-      display:grid;
-      place-items:center;
-      padding:32px;
-      isolation:isolate;
-    }
-
-    .aura{
-      position:absolute; inset:0;
+    @keyframes twinkle{0%,100%{opacity:.12}50%{opacity:.22}}
+    /* Halo nébuleux animé */
+    body::after{
+      content:""; position:fixed; inset:-10%; pointer-events:none; z-index:-1; filter:blur(24px);
       background:
-        radial-gradient(600px 320px at 50% 35%, rgba(0,234,255,.18), transparent 60%),
+        radial-gradient(600px 320px at 50% 25%, rgba(0,234,255,.18), transparent 60%),
         radial-gradient(900px 420px at 50% 70%, rgba(138,43,226,.18), transparent 65%);
-      filter: blur(24px);
       animation: float 18s ease-in-out infinite alternate;
-      pointer-events:none;
-      z-index:0;
     }
-    @keyframes float{
-      from{transform: translateY(-1.5%)}
-      to{transform: translateY(1.5%)}
-    }
+    @keyframes float{from{transform:translateY(-1.5%)}to{transform:translateY(1.5%)}}
 
-    main{
-      z-index:1;
-      width:min(960px, 92vw);
-      text-align:center;
-    }
-    .title{
-      font-family: Orbitron, sans-serif;
-      font-weight:900;
-      letter-spacing:.12em;
-      font-size:clamp(36px, 6vw, 84px);
-      line-height:1;
-      margin:0 0 18px;
-      text-transform:uppercase;
-      color:#eaffff;
-      text-shadow:
-        0 0 10px rgba(0,234,255,.45),
-        0 0 28px rgba(138,43,226,.35),
-        0 0 64px rgba(0,234,255,.25);
-    }
-    .subtitle{
-      margin:0 0 24px;
-      color:var(--muted);
-      font-size:clamp(16px, 2.2vw, 18px);
-    }
+    .container{max-width:1100px;margin:0 auto;padding:16px}
 
-    .panel{
-      display:inline-flex;
-      flex-direction:column;
-      align-items:center;
-      gap:18px;
-      padding:28px;
-      border-radius:20px;
-      border:1px solid rgba(255,255,255,.06);
+    /* Topbar en verre + néon */
+    .topbar{
+      position:sticky; top:16px; z-index:10;
       background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--grid); border-radius:16px; padding:10px 12px;
+      display:flex; align-items:center; gap:10px;
+      box-shadow:0 8px 24px rgba(0,0,0,.35);
       backdrop-filter: blur(8px);
-      box-shadow: 0 12px 40px rgba(0,0,0,.35);
-      max-width: min(680px, 95vw);
-      margin-inline:auto;
     }
+    .topbar h1{
+      font: 700 16px/1 Orbitron, sans-serif;
+      margin:0 8px 0 4px; white-space:nowrap; letter-spacing:.06em;
+    }
+    .spacer{flex:1}
 
-    .cta{
-      display:inline-flex;
-      align-items:center;
-      gap:12px;
-      padding:14px 22px;
-      border-radius:14px;
-      position:relative;
-      font-weight:600;
-      letter-spacing:.04em;
-      text-decoration:none;
-      color:var(--text);
+    /* Boutons ATMOS */
+    .btn{
+      appearance:none; cursor:pointer; border:1px solid transparent; border-radius:12px;
+      padding:10px 12px; color:var(--text);
       background:
         linear-gradient(#0c1327,#0b1120) padding-box,
         conic-gradient(from 180deg, rgba(0,234,255,.8), rgba(138,43,226,.8), rgba(0,234,255,.8)) border-box;
-      border:1px solid transparent;
-      box-shadow:
-        inset 0 0 0 1px rgba(255,255,255,.04),
-        0 8px 24px rgba(0,0,0,.45);
-      transition: transform .2s ease, box-shadow .2s ease, filter .2s ease;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04), 0 8px 24px rgba(0,0,0,.45);
+      transition: transform .2s ease, filter .2s ease, box-shadow .2s ease;
+      font-weight:600; letter-spacing:.02em;
     }
-    .cta .dot{
-      width:10px; height:10px; border-radius:999px;
-      background: radial-gradient(circle at 30% 30%, #fff, var(--primary) 60%, rgba(0,0,0,0) 65%);
-      box-shadow: 0 0 10px var(--primary), 0 0 18px var(--primary);
-      flex: 0 0 auto;
+    .btn:hover{ transform: translateY(-2px); filter: var(--glow); }
+    .btn:focus-visible{ outline:none; box-shadow: var(--ring); }
+    .btn.primary{ /* même rendu, conservée pour compat */
+      filter: drop-shadow(0 0 8px rgba(0,234,255,.25));
     }
-    .cta:hover{
-      transform: translateY(-2px);
-      box-shadow:
-        0 0 18px rgba(0,234,255,.35),
-        0 0 44px rgba(138,43,226,.25);
-      filter: var(--glow);
+    .btn.link{
+      background: transparent; border:0; padding:6px 8px; color:var(--text);
+      text-decoration:underline dotted rgba(234,255,255,.6);
     }
-    .cta:active{ transform: translateY(0) scale(.99); }
-    .cta:focus-visible{ outline:none; box-shadow: var(--ring); }
+    .btn.link:hover{ filter: var(--glow); transform:none }
 
-    .row{display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px}
-    .small{font-size:12px; opacity:.85}
+    .month-label{
+      min-width:220px; text-align:center; font-weight:700;
+      font-family: Orbitron, sans-serif; letter-spacing:.04em;
+    }
+    .row{display:flex;gap:8px;align-items:center}
 
+    /* Carte calendrier */
+    .calendar{
+      margin-top:12px;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--grid); border-radius:16px;
+      box-shadow:0 12px 40px rgba(0,0,0,.35); padding:12px;
+      backdrop-filter: blur(8px);
+    }
+    .weekdays,.grid{display:grid; grid-template-columns:repeat(7,1fr); gap:8px}
+    .weekdays div{font-size:12px;color:var(--muted);text-align:center;padding:6px 0; text-transform:uppercase; letter-spacing:.06em}
+
+    /* Cases jour */
+    .day{
+      border:1px solid var(--grid); border-radius:12px; padding:10px; min-height:120px;
+      background: rgba(8,12,28,.55);
+      display:flex; flex-direction:column; gap:8px;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+      transition: transform .15s ease, filter .15s ease, box-shadow .15s ease;
+    }
+    .day:hover{ transform: translateY(-2px); filter: var(--glow); }
+    .day.out{ opacity:.6 }
+    .day.today{ box-shadow: var(--ring), inset 0 0 0 1px rgba(255,255,255,.04) }
+
+    .day-header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+    .date-num{font-weight:700}
+
+    .tasks{display:flex;flex-direction:column;gap:6px; overflow:hidden}
+
+    /* Étiquettes de tâche (chips) */
+    .chip{
+      display:flex; align-items:center; gap:6px; border:1px solid var(--grid); border-radius:10px; padding:6px 8px;
+      background: rgba(255,255,255,.06);
+      white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:12px; cursor:pointer;
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+      transition: filter .15s ease, transform .15s ease, background .15s ease;
+    }
+    .chip:hover{ background: rgba(255,255,255,.1); filter: var(--glow); transform: translateY(-1px); }
+
+    .dot{width:10px;height:10px;border-radius:9999px;border:1px solid var(--grid);flex:0 0 auto; box-shadow: 0 0 8px rgba(255,255,255,.08)}
+    .more{font-size:12px;color:var(--muted)}
+    .empty{padding:12px;color:var(--muted);text-align:center}
+
+    /* Légende */
+    .legend{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+    .legend .tag{
+      display:flex; align-items:center; gap:6px;
+      border:1px solid var(--grid); border-radius:9999px; padding:6px 10px; font-size:12px;
+      background: rgba(255,255,255,.06);
+      box-shadow: inset 0 0 0 1px rgba(255,255,255,.04);
+      transition: filter .2s ease;
+    }
+    .legend .tag:hover{ filter: var(--glow); }
+
+    .footer{margin-top:12px; color:var(--muted); font-size:12px}
+
+    /* Modal (tiroir) en verre */
+    .modal{
+      position:fixed; inset:0; display:none; align-items:flex-end; justify-content:center;
+      background:rgba(3,6,16,.55); z-index:20; backdrop-filter: blur(2px)
+    }
+    .modal .card{
+      width:min(720px,calc(100vw - 24px)); max-height:80vh; overflow:auto;
+      background: linear-gradient(180deg, rgba(255,255,255,.05), rgba(255,255,255,.02));
+      border:1px solid var(--grid); border-radius:16px; box-shadow:0 20px 40px rgba(0,0,0,.35); padding:12px; color:var(--text);
+      backdrop-filter: blur(8px);
+    }
+    .modal h3{margin:4px 0 8px 0; font-family: Orbitron, sans-serif; letter-spacing:.06em}
+    .task-item{
+      border:1px solid var(--grid); border-radius:12px; padding:10px; background:rgba(255,255,255,.03); margin:8px 0;
+    }
+    .task-item small{color:var(--muted)}
+
+    input[type="file"]{display:none}
+
+    /* Accessibilité */
     @media (prefers-reduced-motion: reduce){
-      *{animation: none!important; transition: none!important}
+      *{ animation:none!important; transition:none!important }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <div class="aura" aria-hidden="true"></div>
-
-    <main>
-      <h1 class="title">ATMOS</h1>
-      <p class="subtitle">Tableau de bord — Portail principal de votre espace de travail.</p>
-
-      <div class="panel" role="group" aria-label="Navigation principale">
-        <!-- Auth -->
-        <div class="row">
-          <button class="cta" id="loginGoogle">Se connecter avec Google</button>
-          <button class="cta" id="loginMicrosoft">Se connecter avec Microsoft</button>
-          <button class="cta" id="logout" style="display:none">Se déconnecter</button>
-        </div>
-        <div class="small" id="who">Non connecté</div>
-
-        <!-- Liens modules -->
-        <a class="cta" href="https://mistergob.github.io/sphaira/" target="_blank" rel="noopener noreferrer" aria-label="Ouvrir SPHAIRA dans un nouvel onglet">
-          <span class="dot" aria-hidden="true"></span>
-          <span>Entrer dans SPHAIRA</span>
-        </a>
-        <a class="cta" href="https://mistergob.github.io/Oris/" target="_blank" rel="noopener noreferrer" aria-label="Ouvrir ORIS (Agenda) dans un nouvel onglet">
-          <span class="dot" aria-hidden="true"></span>
-          <span>Ouvrir ORIS — Agenda</span>
-        </a>
-        <a class="cta" href="https://mistergob.github.io/Nexus/" target="_blank" rel="noopener noreferrer" aria-label="Ouvrir NEXUS (Mails) dans un nouvel onglet">
-          <span class="dot" aria-hidden="true"></span>
-          <span>Ouvrir NEXUS — Mails</span>
-        </a>
+  <div class="container">
+    <div class="topbar" role="toolbar" aria-label="Navigation calendrier">
+      <h1>Agenda — <span class="appname">SPHAIRA</span></h1>
+      <button class="btn" id="prevBtn" title="Mois précédent">◀</button>
+      <div class="month-label" id="monthLabel">—</div>
+      <button class="btn" id="nextBtn" title="Mois suivant">▶</button>
+      <button class="btn" id="todayBtn" title="Revenir à aujourd'hui">Aujourd’hui</button>
+      <div class="spacer"></div>
+      <div class="row">
+        <button class="btn" id="reloadBtn" title="Recharger depuis SPHAIRA">Recharger</button>
+        <label class="btn" for="fileInput" title="Importer un workspace.json exporté">Importer JSON</label>
+        <input id="fileInput" type="file" accept="application/json">
       </div>
-    </main>
+    </div>
+
+    <div class="calendar" aria-live="polite">
+      <div class="weekdays">
+        <div>Lun</div><div>Mar</div><div>Mer</div><div>Jeu</div><div>Ven</div><div>Sam</div><div>Dim</div>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div id="emptyMessage" class="empty" hidden>Aucune tâche planifiée sur ce mois.</div>
+      <div class="legend" id="legend"></div>
+      <div class="footer">
+        Cette page lit les tâches enregistrées par SPHAIRA dans le navigateur (localStorage).
+        Ouvre SPHAIRA dans un autre onglet pour modifier, puis clique « Recharger ».
+      </div>
+    </div>
   </div>
 
-  <!-- Supabase JS -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <!-- Modal jour -->
+  <div id="dayModal" class="modal" aria-hidden="true" role="dialog" aria-label="Tâches du jour">
+    <div class="card">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+        <h3 id="modalTitle">Tâches</h3>
+        <button class="btn" id="closeModal">Fermer</button>
+      </div>
+      <div id="modalList"></div>
+    </div>
+  </div>
+
   <script>
-    // ====== CONFIG SUPABASE (tes valeurs) ======
-    const SUPABASE_URL = "https://jlfvbggzdkkwrmpsamvz.supabase.co";
-    const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsZnZiZ2d6ZGtrd3JtcHNhbXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyNjUyNjMsImV4cCI6MjA3Mjg0MTI2M30.kDbtNVQfHEVxRbA8jsAfLu7-6kDioTCG-nWVQ91gJIs";
+    'use strict';
+    /* ======= Votre JS d'origine inchangé ======= */
 
-    // Crée le client (persistSession et autoRefresh activés par défaut, on les pose explicitement)
-    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
-    });
+    // ====== Config / stockage ======
+    const urlKey = new URLSearchParams(location.search).get('key');
+    const STORAGE_KEYS = urlKey ? [urlKey] : ['sphaira:workspaceState:v1','workspaceState'];
+    const APP_NAME = 'SPHAIRA';
 
-    // Elements UI
-    const loginGoogleBtn = document.getElementById('loginGoogle');
-    const loginMsBtn     = document.getElementById('loginMicrosoft');
-    const logoutBtn      = document.getElementById('logout');
-    const whoSpan        = document.getElementById('who');
-
-    // Petite aide UX pendant l’appel OAuth
-    function setAuthBusy(busy){
-      [loginGoogleBtn, loginMsBtn, logoutBtn].forEach(b=> b.disabled = !!busy);
+    // ====== Date utils (Europe/Paris) ======
+    const now = new Date();
+    function ymd(d){ const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), da=String(d.getDate()).padStart(2,'0'); return `${y}-${m}-${da}`; }
+    function parseYMD(s){ if(!s) return null; const [y,m,d]=s.split('-').map(Number); if(!y||!m||!d) return null; return new Date(y, m-1, d); }
+    function addDays(d, n){ const x=new Date(d); x.setDate(x.getDate()+n); return x; }
+    function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
+    function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
+    function startOfGrid(d){
+      const first = startOfMonth(d);
+      const day = (first.getDay()+6)%7; // 0=lundi … 6=dim
+      return addDays(first, -day);
     }
+    function endOfGrid(d){
+      const last = endOfMonth(d);
+      const day = (last.getDay()+6)%7; // 0..6
+      return addDays(last, 6-day);
+    }
+    function isSameDay(a,b){ return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 
-    // Affiche l'état
-    function show(session){
-      const user = session?.user || null;
-      if(user){
-        const name = user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Connecté';
-        whoSpan.textContent = `Connecté : ${name}`;
-        loginGoogleBtn.style.display = 'none';
-        loginMsBtn.style.display     = 'none';
-        logoutBtn.style.display      = '';
-      }else{
-        whoSpan.textContent = 'Non connecté';
-        loginGoogleBtn.style.display = '';
-        loginMsBtn.style.display     = '';
-        logoutBtn.style.display      = 'none';
+    // ====== Lecture état SPHAIRA ======
+    function loadWorkspaceFromStorage(){
+      for(const key of STORAGE_KEYS){
+        try{
+          const raw = localStorage.getItem(key);
+          if(raw){ const json=JSON.parse(raw); return { json, storageKey:key }; }
+        }catch(e){}
       }
+      return { json:null, storageKey:null };
     }
 
-    // Redirige vers la même page (sans query) après OAuth
-    const SITE_URL = location.origin + location.pathname;
-
-    async function signIn(provider, scopes){
-      try{
-        setAuthBusy(true);
-        const { error } = await supabase.auth.signInWithOAuth({
-          provider,
-          options: { redirectTo: SITE_URL, scopes }
+    function extractTasks(ws){
+      if(!ws || !Array.isArray(ws.nodes)) return { tasks:[], nodes:[] };
+      const nodes = ws.nodes.map(n=>({
+        id:n.id, name:n.text||n.id, color:n.color||'#00EAFF'
+      }));
+      const map = Object.fromEntries(nodes.map(n=>[n.id,n]));
+      const tasks=[];
+      ws.nodes.forEach(n=>{
+        const nodeInfo = map[n.id];
+        (n.tasks||[]).forEach(t=>{
+          tasks.push({
+            id:t.id, title: t.title||'(Sans titre)', desc: t.desc||'',
+            start: t.start||'', end: t.end||'',
+            startDate: parseYMD(t.start||''), endDate: parseYMD(t.end||''),
+            nodeId: n.id, nodeName: nodeInfo?.name || n.id, color: nodeInfo?.color || '#00EAFF'
+          });
         });
-        if(error){
-          alert('Connexion impossible : ' + error.message);
-          setAuthBusy(false);
-        }
-        // En cas de succès, le navigateur est redirigé par le provider (donc pas de suite ici).
-      }catch(err){
-        alert('Erreur inattendue : ' + (err?.message || err));
-        setAuthBusy(false);
-      }
+      });
+      return { tasks, nodes };
     }
 
-    // Boutons
-    loginGoogleBtn.onclick   = () => signIn('google', 'email profile openid');
-    // Pour Microsoft, le provider Supabase est "azure"
-    loginMsBtn.onclick       = () => signIn('azure', 'email openid profile');
-    logoutBtn.onclick        = async () => { await supabase.auth.signOut(); show(null); };
+    function expandTaskDays(task){
+      const s = task.startDate || task.endDate;
+      const e = task.endDate || task.startDate;
+      if(!s && !e) return [];
+      const days=[];
+      const from = new Date(s); const to = new Date(e || s);
+      for(let d=new Date(from); d<=to; d=addDays(d,1)){ days.push(ymd(d)); }
+      return days;
+    }
 
-    // Nettoyage URL après retour OAuth (supprime ?code=...&state=...)
-    (function cleanOAuthParams(){
-      const q = new URLSearchParams(location.search);
-      if(q.has('code') || q.has('state') || q.has('error_description')){
-        history.replaceState({}, document.title, SITE_URL);
+    // ====== Rendu ======
+    const gridEl = document.getElementById('grid');
+    const monthLabel = document.getElementById('monthLabel');
+    const emptyMsg = document.getElementById('emptyMessage');
+    const legendEl = document.getElementById('legend');
+    const appnameSpans = document.querySelectorAll('.appname');
+
+    let current = new Date(now.getFullYear(), now.getMonth(), 1);
+    let cache = { tasks:[], nodes:[], storageKey:null };
+
+    function formatMonth(frDate){
+      return frDate.toLocaleDateString('fr-FR',{ month:'long', year:'numeric' });
+    }
+
+    function rebuildLegend(nodes){
+      legendEl.innerHTML='';
+      nodes.forEach(n=>{
+        const tag = document.createElement('div');
+        tag.className='tag';
+        tag.innerHTML = `<span class="dot" style="background:${n.color}"></span><span>${escapeHtml(n.name)}</span>`;
+        legendEl.appendChild(tag);
+      });
+    }
+
+    function renderCalendar(){
+      monthLabel.textContent = formatMonth(current);
+      gridEl.innerHTML='';
+      const start = startOfGrid(current);
+      const end   = endOfGrid(current);
+      const daysCount = Math.round((end - start)/(1000*60*60*24)) + 1;
+
+      const byDate = new Map();
+      let anyPlanned = false;
+      cache.tasks.forEach(t=>{
+        const days = expandTaskDays(t);
+        if(days.length>0) anyPlanned = true;
+        days.forEach(d=>{
+          if(!byDate.has(d)) byDate.set(d, []);
+          byDate.get(d).push(t);
+        });
+      });
+
+      for(let i=0;i<daysCount;i++){
+        const d = addDays(start,i);
+        const key = ymd(d);
+        const box = document.createElement('div');
+        box.className='day';
+        const out = d.getMonth()!==current.getMonth();
+        if(out) box.classList.add('out');
+        if(isSameDay(d, new Date())) box.classList.add('today');
+
+        const header = document.createElement('div');
+        header.className='day-header';
+        header.innerHTML = `<div class="date-num">${d.getDate()}</div>`;
+        const openBtn = document.createElement('button');
+        openBtn.className='btn link';
+        openBtn.textContent='Voir';
+        openBtn.addEventListener('click',()=> openDayModal(d, byDate.get(key)||[]));
+        header.appendChild(openBtn);
+
+        const list = document.createElement('div');
+        list.className='tasks';
+
+        const items = (byDate.get(key)||[]);
+        items.slice(0,3).forEach(t=>{
+          const chip = document.createElement('div');
+          chip.className='chip';
+          chip.innerHTML = `<span class="dot" style="background:${t.color}"></span><span>${escapeHtml(t.title)}</span>`;
+          chip.title = `${t.title} — ${t.nodeName}`;
+          chip.addEventListener('click',()=> openDayModal(d, items));
+          list.appendChild(chip);
+        });
+        if(items.length>3){
+          const more = document.createElement('div');
+          more.className='more';
+          more.textContent = `+${items.length-3} autres…`;
+          list.appendChild(more);
+        }
+
+        box.appendChild(header);
+        box.appendChild(list);
+        gridEl.appendChild(box);
       }
-    })();
+      emptyMsg.hidden = anyPlanned;
+      rebuildLegend(cache.nodes);
+      appnameSpans.forEach(s=> s.textContent = APP_NAME);
+    }
 
-    // État initial + abonnement
-    supabase.auth.getSession().then(({ data }) => show(data.session));
-    supabase.auth.onAuthStateChange((_e, session) => {
-      show(session);
-      setAuthBusy(false);
+    // ====== Modal jour ======
+    const dayModal = document.getElementById('dayModal');
+    const closeModalBtn = document.getElementById('closeModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalList = document.getElementById('modalList');
+
+    function fmtRange(s,e){
+      if(!s && !e) return 'Sans date';
+      if(s && e) return `Du ${s} au ${e}`;
+      if(s && !e) return `À partir du ${s}`;
+      if(!s && e) return `Jusqu’au ${e}`;
+    }
+
+    function openDayModal(date, tasks){
+      modalTitle.textContent = `Tâches du ${date.toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long', year:'numeric'})}`;
+      modalList.innerHTML='';
+      if(tasks.length===0){
+        const d=document.createElement('div'); d.className='empty'; d.textContent='Aucune tâche pour ce jour.'; modalList.appendChild(d);
+      }else{
+        tasks
+          .slice()
+          .sort((a,b)=> (a.nodeName.localeCompare(b.nodeName)) || (a.title.localeCompare(b.title)) )
+          .forEach(t=>{
+            const card=document.createElement('div');
+            card.className='task-item';
+            card.innerHTML = `
+              <div style="display:flex; align-items:flex-start; gap:10px; justify-content:space-between;">
+                <div style="flex:1;">
+                  <div><strong><span class="dot" style="background:${t.color}"></span> ${escapeHtml(t.title)}</strong></div>
+                  <div><small>Sur : ${escapeHtml(t.nodeName)}</small></div>
+                  <div><small>${fmtRange(t.start, t.end)}</small></div>
+                  ${t.desc ? `<div style="margin-top:6px">${escapeHtml(t.desc)}</div>` : ''}
+                </div>
+              </div>
+            `;
+            modalList.appendChild(card);
+          });
+      }
+      dayModal.style.display='flex';
+      dayModal.setAttribute('aria-hidden','false');
+    }
+    function closeDayModal(){ dayModal.style.display='none'; dayModal.setAttribute('aria-hidden','true'); }
+    dayModal.addEventListener('click', e=>{ if(e.target===dayModal) closeDayModal(); });
+    closeModalBtn.addEventListener('click', closeDayModal);
+
+    // ====== Actions ======
+    document.getElementById('prevBtn').addEventListener('click', ()=>{ current = new Date(current.getFullYear(), current.getMonth()-1, 1); renderCalendar(); });
+    document.getElementById('nextBtn').addEventListener('click', ()=>{ current = new Date(current.getFullYear(), current.getMonth()+1, 1); renderCalendar(); });
+    document.getElementById('todayBtn').addEventListener('click', ()=>{ current = new Date(); current = new Date(current.getFullYear(), current.getMonth(), 1); renderCalendar(); });
+    document.getElementById('reloadBtn').addEventListener('click', ()=> initFromStorage());
+    document.getElementById('fileInput').addEventListener('change', async (e)=>{
+      const f=e.target.files?.[0]; if(!f) return;
+      try{
+        const text = await f.text();
+        const json = JSON.parse(text);
+        const { tasks, nodes } = extractTasks(json);
+        cache = { tasks, nodes, storageKey: '(import fichier)' };
+        renderCalendar();
+      }catch(err){ alert('Fichier JSON invalide.'); }
+      finally{ e.target.value=''; }
     });
 
-    // Optionnel : avertit si la page est ouverte en file:// (OAuth nécessite https)
-    if(location.protocol === 'file:'){
-      whoSpan.textContent = 'Ouvre cette page via HTTPS (GitHub Pages, Netlify…) pour que la connexion fonctionne.';
+    window.addEventListener('storage', (e)=>{
+      if(STORAGE_KEYS.includes(e.key)) initFromStorage();
+    });
+
+    function initFromStorage(){
+      const { json, storageKey } = loadWorkspaceFromStorage();
+      if(!json){
+        cache = { tasks:[], nodes:[], storageKey:null };
+      }else{
+        const { tasks, nodes } = extractTasks(json);
+        cache = { tasks, nodes, storageKey };
+      }
+      renderCalendar();
     }
+
+    function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+    // Boot
+    initFromStorage();
   </script>
 </body>
 </html>
