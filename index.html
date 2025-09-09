@@ -211,7 +211,7 @@
 <body class="auth-locked">
   <div class="container">
     <div class="topbar" role="toolbar" aria-label="Navigation calendrier">
-      <h1>Agenda — <span class="appname">SPHAIRA</span></h1>
+      <h1>Agenda — <span class="appname">ORIS</span></h1>
       <button class="btn" id="prevBtn" title="Mois précédent">◀</button>
       <div class="month-label" id="monthLabel">—</div>
       <button class="btn" id="nextBtn" title="Mois suivant">▶</button>
@@ -253,7 +253,7 @@
   <div id="authBlock" class="auth-block" aria-live="polite" role="alert">
     <div class="auth-card">
       <h3>Connexion nécessaire</h3>
-      <p>Connectez-vous sur <strong>ATMOS</strong> pour utiliser l’Agenda SPHAIRA.</p>
+      <p>Connectez-vous sur <strong>ATMOS</strong> pour utiliser l’Agenda ORIS.</p>
       <div class="actions" style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
         <a id="authGoAtmos" class="btn">Se connecter sur ATMOS</a>
       </div>
@@ -262,12 +262,11 @@
 
   <script>
     'use strict';
-    /* ======= Votre JS d'origine inchangé ======= */
 
     // ====== Config / stockage ======
     const urlKey = new URLSearchParams(location.search).get('key');
     const STORAGE_KEYS = urlKey ? [urlKey] : ['sphaira:workspaceState:v1','workspaceState'];
-    const APP_NAME = 'SPHAIRA';
+    const APP_NAME = 'ORIS';
 
     // ====== Date utils (Europe/Paris) ======
     const now = new Date();
@@ -301,9 +300,7 @@
 
     function extractTasks(ws){
       if(!ws || !Array.isArray(ws.nodes)) return { tasks:[], nodes:[] };
-      const nodes = ws.nodes.map(n=>({
-        id:n.id, name:n.text||n.id, color:n.color||'#00EAFF'
-      }));
+      const nodes = ws.nodes.map(n=>({ id:n.id, name:n.text||n.id, color:n.color||'#00EAFF' }));
       const map = Object.fromEntries(nodes.map(n=>[n.id,n]));
       const tasks=[];
       ws.nodes.forEach(n=>{
@@ -509,8 +506,8 @@
     const SUPABASE_URL = `https://${PROJECT_REF}.supabase.co`;
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsZnZiZ2d6ZGtrd3JtcHNhbXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyNjUyNjMsImV4cCI6MjA3Mjg0MTI2M30.kDbtNVQfHEVxRbA8jsAfLu7-6kDioTCG-nWVQ91gJIs";
 
-    // ⚙️ Ajuste le chemin d’ATMOS si besoin
-    const ATMOS_URL = location.origin + "/atmos/";
+    // ✅ URL ATMOS sur GitHub Pages (respecte la casse)
+    const ATMOS_URL = "https://mistergob.github.io/Atmos/";
 
     const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
       auth: {
@@ -518,7 +515,7 @@
         autoRefreshToken: true,
         detectSessionInUrl: true,
         storage: window.localStorage,
-        storageKey: `sb-${PROJECT_REF}-auth-token` // identique à ATMOS
+        storageKey: `sb-${PROJECT_REF}-auth-token` // identique à ATMOS, NEXUS, SPHAIRA
       }
     });
 
@@ -555,4 +552,3 @@
   </script>
 </body>
 </html>
-
