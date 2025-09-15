@@ -333,6 +333,10 @@
     const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpsZnZiZ2d6ZGtrd3JtcHNhbXZ6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTcyNjUyNjMsImV4cCI6MjA3Mjg0MTI2M30.kDbtNVQfHEVxRbA8jsAfLu7-6kDioTCG-nWVQ91gJIs";
     const ATMOS_URL = "https://mistergob.github.io/Atmos/";
     const STORAGE_KEY = `sb-${PROJECT_REF}-auth-token`;
+
+    // Heartbeat keys / intervals
+    const ORIS_BEAT_KEY = 'oris:beatAt';
+    const ORIS_BEAT_INTERVAL = 10000; // 10s
   </script>
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -393,6 +397,20 @@
     function setAuthLocked(on){
       document.body.classList.toggle('auth-locked', !!on);
     }
+
+    // ====== HEARTBEAT ORIS (pour ATMOS) ======
+    (function startOrisHeartbeat(){
+      let bc = null;
+      try { bc = new BroadcastChannel('ORIS_HEARTBEAT'); } catch(_) {}
+      function beat(){
+        try{ localStorage.setItem(ORIS_BEAT_KEY, Date.now().toString()); }catch{}
+        try{ bc && bc.postMessage('ping'); }catch{}
+      }
+      // ping immédiat au chargement + intervalle + au retour en visibilité
+      beat();
+      setInterval(beat, ORIS_BEAT_INTERVAL);
+      document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) beat(); });
+    })();
 
     // ====== DATE UTILS (Europe/Paris) ======
     function startOfDay(d){ const x = new Date(d); x.setHours(0,0,0,0); return x; }
@@ -614,8 +632,8 @@
           const cell = document.createElement('div'); cell.className='cell'; cell.dataset.date = day.toISOString();
           const head = document.createElement('div'); head.style.display='flex'; head.style.justifyContent='space-between'; head.style.alignItems='center';
           head.innerHTML = `<strong>${day.getDate()}</strong>`;
-          const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+';
-          plus.title='Nouvel événement'; plus.onclick = (e)=>{ e.stopPropagation(); openEventModal({ start: day, end: addDays(day,1), allDay:true }); };
+          const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
+          plus.onclick = (e)=>{ e.stopPropagation(); openEventModal({ start: day, end: addDays(day,1), allDay:true }); };
           head.appendChild(plus);
           cell.appendChild(head);
 
@@ -644,17 +662,16 @@
           const h = document.createElement('div'); h.className='cell head'; h.innerHTML = d.toLocaleDateString('fr-FR',{weekday:'short', day:'2-digit', month:'2-digit'});
           gridEl.appendChild(h);
         }
-        // body: we’ll show simple lists by day
+        // body: simple lists by day
         for(let row=0; row<12; row++){
           const hourLabel = document.createElement('div'); hourLabel.className='cell head'; hourLabel.textContent = (row*2).toString().padStart(2,'0')+':00';
           gridEl.appendChild(hourLabel);
           for(let i=0;i<7;i++){
             const d = addDays(startOfWeek(cursor), i);
             const cell = document.createElement('div'); cell.className='cell'; cell.dataset.date = d.toISOString();
-            const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+';
+            const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
             plus.onclick = (e)=>{ e.stopPropagation(); openEventModal({ start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2), end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2+1) }); };
             cell.appendChild(plus);
-            // day events (simplified)
             events.filter(ev=>{
               const s = new Date(ev.start); const e = new Date(ev.end || ev.start);
               return s <= endOfDay(d) && e >= startOfDay(d);
@@ -675,7 +692,8 @@
         const head = document.createElement('div'); head.className='cell head'; head.textContent = d.toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long', year:'numeric'});
         gridEl.appendChild(head);
         const cell = document.createElement('div'); cell.className='cell';
-        const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.onclick = ()=> openEventModal({ start: d, end: addDays(d,0), allDay:false });
+        const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
+        plus.onclick = ()=> openEventModal({ start: d, end: addDays(d,0), allDay:false });
         cell.appendChild(plus);
         events.filter(ev=>{
           const s = new Date(ev.start); const e = new Date(ev.end || ev.start);
