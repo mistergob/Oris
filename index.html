@@ -422,6 +422,11 @@
     function startOfMonth(d){ return new Date(d.getFullYear(), d.getMonth(), 1); }
     function endOfMonth(d){ return new Date(d.getFullYear(), d.getMonth()+1, 0); }
     function fmtDate(d,opts){ return d.toLocaleString('fr-FR',opts||{ day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }); }
+    function toDate(value){
+      if(!value) return null;
+      const d = new Date(value);
+      return Number.isNaN(d.valueOf()) ? null : d;
+    }
 
     // ====== AUTH ======
     async function tryGoogleFromAtmos(){
@@ -473,7 +478,11 @@
               gapi.client.setToken({ access_token: resp.access_token });
               logoutBtn.disabled = false;
               setStatus('Authentifié. Récupération des calendriers…');
-              await bootCalendar();
+              try{
+                await bootCalendar();
+              }catch(err){
+                console.error('[ORIS] bootCalendar after login failed:', err);
+              }
             }else{
               setStatus('Échec authentification Google.');
             }
@@ -489,6 +498,7 @@
         if(tok && tok.access_token){ google.accounts.oauth2.revoke(tok.access_token, ()=>{}); }
       }catch{}
       gapi.client.setToken('');
+      if(refreshTimer){ clearInterval(refreshTimer); refreshTimer=null; }
       calendars=[]; events=[]; render();
       logoutBtn.disabled = true;
       setStatus('Déconnecté.');
@@ -496,9 +506,15 @@
 
     // ====== CALENDAR API ======
     async function bootCalendar(){
-      await loadCalendars();
-      await loadEvents();
-      autoRefresh();
+      try{
+        await loadCalendars();
+        await loadEvents();
+        autoRefresh();
+        setStatus('Calendriers synchronisés.');
+      }catch(err){
+        console.error('[ORIS] bootCalendar error:', err);
+        throw err;
+      }
     }
 
     async function loadCalendars(){
@@ -539,51 +555,82 @@
     }
 
     async function loadEvents(){
-      const { start, end, label } = currentRange();
-      periodLabel.textContent = label;
+      try{
+        const { start, end, label } = currentRange();
+        periodLabel.textContent = label;
 
-      const params = {
-        calendarId: 'primary', // we’ll loop later
-        timeMin: start.toISOString(),
-        timeMax: end.toISOString(),
-        singleEvents: true,
-        orderBy: 'startTime',
-        maxResults: 2500
-      };
+        const params = {
+          calendarId: 'primary', // we’ll loop later
+          timeMin: start.toISOString(),
+          timeMax: end.toISOString(),
+          singleEvents: true,
+          orderBy: 'startTime',
+          maxResults: 2500
+        };
 
-      const sel = calendarSelect.value;
-      let evts = [];
+        const sel = calendarSelect.value;
+        let evts = [];
 
-      const calendarsToQuery = sel ? calendars.filter(c=>c.id===sel) : calendars;
-      for(const cal of calendarsToQuery){
-        const r = await gapi.client.calendar.events.list({ ...params, calendarId: cal.id });
-        const items = (r.result.items||[]).map(e=>({
-          id:e.id, calId:cal.id, calName:cal.summary, color: cal.backgroundColor,
-          summary:e.summary||'(Sans titre)', location:e.location||'', description:e.description||'',
-          start:e.start?.dateTime || e.start?.date, end:e.end?.dateTime || e.end?.date,
-          allDay: !!e.start?.date && !e.start?.dateTime,
-          hangoutLink: e.hangoutLink || '',
-          recurring: !!e.recurrence?.length,
-          raw:e
-        }));
-        evts.push(...items);
+        const calendarsToQuery = sel ? calendars.filter(c=>c.id===sel) : calendars;
+        for(const cal of calendarsToQuery){
+          const r = await gapi.client.calendar.events.list({ ...params, calendarId: cal.id });
+          const items = (r.result.items||[]).map(e=>{
+          const startRaw = e.start?.dateTime || e.start?.date;
+          const endRaw = e.end?.dateTime || e.end?.date || startRaw;
+          const allDay = !!e.start?.date && !e.start?.dateTime;
+          const startDate = toDate(startRaw) || new Date();
+          const endDateRaw = toDate(endRaw) || startDate;
+          const displayEnd = allDay
+            ? (endDateRaw > startDate ? addDays(endDateRaw, -1) : startDate)
+            : endDateRaw;
+          return {
+            id:e.id,
+            calId:cal.id,
+            calName:cal.summary,
+            color: cal.backgroundColor,
+            summary:e.summary||'(Sans titre)',
+            location:e.location||'',
+            description:e.description||'',
+            startRaw,
+            endRaw,
+            startDate,
+            endDate: displayEnd,
+            allDay,
+            hangoutLink: e.hangoutLink || '',
+            recurring: !!e.recurrence?.length,
+            raw:e
+          };
+        });
+          evts.push(...items);
+        }
+        events = evts;
+        render();
+      }catch(err){
+        console.error('[ORIS] loadEvents error:', err);
+        setStatus('Erreur lors du chargement des événements.');
+        throw err;
       }
-      events = evts;
-      render();
     }
 
     async function saveEvent(data){
-      // data: {id?, calId, summary, description, location, startISO, endISO, allDay, meet:'create'|''}
-      const res = data.id
-        ? await gapi.client.calendar.events.patch({
-            calendarId: data.calId, eventId: data.id,
-            resource: composeEventResource(data)
-          })
-        : await gapi.client.calendar.events.insert({
-            calendarId: data.calId,
-            conferenceDataVersion: data.meet==='create' ? 1 : 0,
-            resource: composeEventResource(data)
-          });
+      // data: {id?, calId, summary, description, location, startISO?, endISO?, startDate?, endDate?, allDay, meet:'create'|''}
+      const resource = composeEventResource(data);
+      if(data.id){
+        const res = await gapi.client.calendar.events.patch({
+          calendarId: data.calId,
+          eventId: data.id,
+          resource
+        });
+        return res.result;
+      }
+      const params = {
+        calendarId: data.calId,
+        resource
+      };
+      if(data.meet === 'create'){
+        params.conferenceDataVersion = 1;
+      }
+      const res = await gapi.client.calendar.events.insert(params);
       return res.result;
     }
 
@@ -594,8 +641,8 @@
         location: d.location || ''
       };
       if(d.allDay){
-        body.start = { date: d.startISO.slice(0,10) };
-        body.end = { date: d.endISO.slice(0,10) };
+        body.start = { date: d.startDate };
+        body.end = { date: d.endDate };
       }else{
         body.start = { dateTime: d.startISO };
         body.end = { dateTime: d.endISO };
@@ -639,12 +686,13 @@
 
           const list = document.createElement('div');
           events.filter(ev=>{
-            const s = new Date(ev.start); const e = new Date(ev.end || ev.start);
+            const s = ev.startDate;
+            const e = ev.endDate || ev.startDate;
             const d0 = startOfDay(day);
             return s <= endOfDay(day) && e >= d0; // overlap day
           }).slice(0,5).forEach(ev=>{
             const div = document.createElement('div'); div.className='event';
-            const when = ev.allDay ? 'Journée' : `${new Date(ev.start).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
+            const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
             div.innerHTML = `<div style="display:flex; gap:6px; align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
             div.onclick = ()=> openEventModal({ existing: ev });
             list.appendChild(div);
@@ -673,11 +721,11 @@
             plus.onclick = (e)=>{ e.stopPropagation(); openEventModal({ start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2), end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2+1) }); };
             cell.appendChild(plus);
             events.filter(ev=>{
-              const s = new Date(ev.start); const e = new Date(ev.end || ev.start);
+              const s = ev.startDate; const e = ev.endDate || ev.startDate;
               return s <= endOfDay(d) && e >= startOfDay(d);
             }).slice(0,4).forEach(ev=>{
               const div=document.createElement('div'); div.className='event';
-              const when = ev.allDay ? 'Journée' : `${new Date(ev.start).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
+              const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
               div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
               div.onclick = ()=> openEventModal({ existing: ev });
               cell.appendChild(div);
@@ -696,11 +744,12 @@
         plus.onclick = ()=> openEventModal({ start: d, end: addDays(d,0), allDay:false });
         cell.appendChild(plus);
         events.filter(ev=>{
-          const s = new Date(ev.start); const e = new Date(ev.end || ev.start);
+          const s = ev.startDate; const e = ev.endDate || ev.startDate;
           return s <= endOfDay(d) && e >= startOfDay(d);
         }).forEach(ev=>{
           const div=document.createElement('div'); div.className='event';
-          const when = ev.allDay ? 'Journée' : `${new Date(ev.start).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} → ${new Date(ev.end||ev.start).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
+          const endDisplay = ev.endDate || ev.startDate;
+          const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} → ${endDisplay.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
           div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>${ev.location?`<div class="when">📍 ${escapeHtml(ev.location)}</div>`:''}`;
           div.onclick = ()=> openEventModal({ existing: ev });
           cell.appendChild(div);
@@ -723,9 +772,18 @@
       if(existing){
         fTitle.value = existing.summary || '';
         fCalendar.value = existing.calId;
-        const s = new Date(existing.start); const e = new Date(existing.end || existing.start);
-        fStart.value = toLocalInputValue(s, !existing.allDay);
-        fEnd.value = toLocalInputValue(e, !existing.allDay);
+        if(existing.allDay){
+          const s = toDate(`${existing.startRaw}T00:00`) || new Date();
+          const exclusiveEnd = toDate(`${(existing.endRaw || existing.startRaw)}T00:00`);
+          const inclusiveEnd = exclusiveEnd ? addDays(exclusiveEnd, -1) : s;
+          fStart.value = toLocalInputValue(s, false);
+          fEnd.value = toLocalInputValue(inclusiveEnd, false);
+        }else{
+          const s = toDate(existing.startRaw) || new Date();
+          const e = toDate(existing.endRaw || existing.startRaw) || s;
+          fStart.value = toLocalInputValue(s, true);
+          fEnd.value = toLocalInputValue(e, true);
+        }
         fLocation.value = existing.location || '';
         fDesc.value = existing.description || '';
         fMeet.value = existing.raw.conferenceData?.entryPoints?.length ? '' : '';
@@ -733,9 +791,14 @@
         fTitle.value = '';
         fCalendar.value = (calendars.find(c=>c.primary)?.id) || calendars[0]?.id || '';
         const s = start || new Date();
-        const e = end || addDays(s, 0);
         fStart.value = toLocalInputValue(s, !allDay);
-        fEnd.value = toLocalInputValue(allDay ? addDays(s,1) : addMinutes(s,60), !allDay);
+        if(allDay){
+          const endCandidate = end ? addDays(end, -1) : s;
+          fEnd.value = toLocalInputValue(endCandidate, false);
+        }else{
+          const endCandidate = end || addMinutes(s,60);
+          fEnd.value = toLocalInputValue(endCandidate, true);
+        }
         fLocation.value = '';
         fDesc.value = '';
         fMeet.value = '';
@@ -757,22 +820,45 @@
       const hh = pad(d.getHours()), mi = pad(d.getMinutes());
       return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
     }
+    function toDateOnlyString(d){
+      const pad = (n)=> String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    }
 
     saveEventBtn.onclick = async ()=>{
       try{
-        const allDay = fStart.value.slice(11) === '00:00' && fEnd.value.slice(11) === '00:00';
-        const data = {
+        const startValue = fStart.value;
+        const endValue = fEnd.value;
+        if(!startValue || !endValue){ alert('Veuillez renseigner des dates de début et de fin.'); return; }
+        const allDay = startValue.slice(11) === '00:00' && endValue.slice(11) === '00:00';
+        const base = {
           id: currentEvent?.id || null,
           calId: fCalendar.value,
           summary: fTitle.value.trim(),
           description: fDesc.value,
           location: fLocation.value,
-          startISO: new Date(fStart.value).toISOString(),
-          endISO: new Date(fEnd.value).toISOString(),
           allDay,
           meet: fMeet.value
         };
-        await saveEvent(data);
+        if(allDay){
+          const startDateStr = startValue.slice(0,10);
+          const endDateStr = endValue.slice(0,10);
+          if(!startDateStr || !endDateStr){ alert('Format de date invalide.'); return; }
+          const startDay = toDate(`${startDateStr}T00:00`);
+          const endDay = toDate(`${endDateStr}T00:00`);
+          if(!startDay || !endDay){ alert('Format de date invalide.'); return; }
+          if(endDay < startDay){ alert('La date de fin ne peut pas être antérieure à la date de début.'); return; }
+          base.startDate = toDateOnlyString(startDay);
+          base.endDate = toDateOnlyString(addDays(endDay, 1));
+        }else{
+          const start = toDate(startValue);
+          const end = toDate(endValue);
+          if(!start || !end){ alert('Dates/heures invalides.'); return; }
+          if(end <= start){ alert('La date de fin doit être postérieure à la date de début.'); return; }
+          base.startISO = start.toISOString();
+          base.endISO = end.toISOString();
+        }
+        await saveEvent(base);
         closeEventModal();
         setStatus('Événement enregistré.');
         await loadEvents();
@@ -835,7 +921,10 @@
           taskListEl.appendChild(el);
         });
     }
-    toggleTasksBtn.onclick = ()=>{ const s=tasksSection.style; s.display = (s.display==='none'?'':'none') ? 'none' : ''; }; // simple toggle
+    toggleTasksBtn.onclick = ()=>{
+      const hidden = tasksSection.style.display === 'none';
+      tasksSection.style.display = hidden ? '' : 'none';
+    }; // simple toggle
     window.addEventListener('storage', (e)=>{ if(STORAGE_KEYS.includes(e.key)) renderTasks(); });
 
     // ====== NAV + SEARCH ======
