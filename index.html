@@ -960,7 +960,13 @@
     closeEventBtn.onclick = closeEventModal;
 
     // ====== TASKS (SPHAIRA) ======
-    const STORAGE_KEYS = ['sphaira:workspaceState:v1','workspaceState'];
+    const STORAGE_KEYS = [
+      'sphaira:workspaceState:v1',
+      'sphaira:workspaceState:v2',
+      'workspaceState',
+      'sphaira:tasks',
+      'sphaira:tasks:v1'
+    ];
     function loadWorkspaceFromStorage(){
       for(const key of STORAGE_KEYS){
         try{
@@ -970,19 +976,85 @@
       }
       return { json:null, storageKey:null };
     }
+    function normalizeTask(task, meta={}){
+      const title = task?.title || task?.name || '(Sans titre)';
+      const desc = task?.desc || task?.description || '';
+      const start = task?.start || task?.startDate || task?.dueDate || '';
+      const end = task?.end || task?.endDate || '';
+      const status = task?.status || meta.status || '';
+      return {
+        id: task?.id || `${meta.prefix||'task'}-${Math.random().toString(36).slice(2,9)}`,
+        title,
+        desc,
+        start,
+        end,
+        status,
+        nodeName: meta.nodeName || '',
+        color: task?.color || meta.color || '#00EAFF'
+      };
+    }
     function extractTasks(ws){
-      if(!ws || !Array.isArray(ws.nodes)) return [];
-      const nodes = Object.fromEntries(ws.nodes.map(n=>[n.id, {name:n.text||n.id, color:n.color||'#00EAFF'}]));
+      if(!ws) return [];
       const tasks=[];
-      ws.nodes.forEach(n=>{
-        (n.tasks||[]).forEach(t=>{
-          tasks.push({
-            id:t.id, title: t.title||'(Sans titre)', desc: t.desc||'',
-            start: t.start||'', end: t.end||'',
-            nodeName: nodes[n.id]?.name || n.id, color: nodes[n.id]?.color || '#00EAFF'
+      const pushTasks = (list=[], meta={})=>{
+        list.filter(Boolean).forEach(t=> tasks.push(normalizeTask(t, meta)));
+      };
+      if(Array.isArray(ws)){
+        pushTasks(ws);
+      }
+      if(Array.isArray(ws.tasks)){
+        pushTasks(ws.tasks);
+      }
+      if(Array.isArray(ws.nodes)){
+        const nodes = Object.fromEntries(ws.nodes.map(n=>[n.id, {
+          name:n.text||n.title||n.id,
+          color:n.color||'#00EAFF'
+        }]));
+        ws.nodes.forEach(n=>{
+          const meta = {
+            nodeName: nodes[n.id]?.name || n.id,
+            color: nodes[n.id]?.color || '#00EAFF',
+            prefix: `node-${n.id}`
+          };
+          pushTasks(n.tasks || [], meta);
+        });
+      }
+      const collections = ['columns','lists'];
+      collections.forEach(key=>{
+        if(Array.isArray(ws[key])){
+          ws[key].forEach(col=>{
+            const meta = {
+              nodeName: col.name || col.title || '',
+              color: col.color || '#00EAFF',
+              status: col.status || col.name || '',
+              prefix: `${key}-${col.id||col.name||'col'}`
+            };
+            pushTasks(col.tasks || col.cards || [], meta);
+          });
+        }
+      });
+      if(Array.isArray(ws.boards)){
+        ws.boards.forEach(board=>{
+          pushTasks(board.tasks || [], {
+            nodeName: board.name || board.title || '',
+            color: board.color || '#00EAFF',
+            prefix: `board-${board.id||board.name||'board'}`
+          });
+          collections.forEach(key=>{
+            if(Array.isArray(board[key])){
+              board[key].forEach(col=>{
+                const meta = {
+                  nodeName: col.name || col.title || board.name || '',
+                  color: col.color || board.color || '#00EAFF',
+                  status: col.status || col.name || '',
+                  prefix: `${key}-${board.id||board.name||'board'}-${col.id||col.name||'col'}`
+                };
+                pushTasks(col.tasks || col.cards || [], meta);
+              });
+            }
           });
         });
-      });
+      }
       return tasks;
     }
     function renderTasks(){
@@ -997,7 +1069,8 @@
           el.innerHTML = `<span class="dot" style="background:${t.color}"></span>
             <div>
               <div><strong>${escapeHtml(t.title)}</strong></div>
-              ${t.start || t.end ? `<small>${t.start ? 'Du '+t.start : ''} ${t.end ? ' au '+t.end : ''}</small><br/>` : ''}
+              ${t.status ? `<small>Statut : ${escapeHtml(t.status)}</small><br/>` : ''}
+              ${t.start || t.end ? `<small>${t.start ? 'Du '+escapeHtml(t.start) : ''} ${t.end ? ' au '+escapeHtml(t.end) : ''}</small><br/>` : ''}
               ${t.nodeName ? `<small>Sur : ${escapeHtml(t.nodeName)}</small>`:''}
               ${t.desc ? `<div style="margin-top:6px">${escapeHtml(t.desc)}</div>`:''}
             </div>`;
