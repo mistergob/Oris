@@ -105,7 +105,11 @@
     .cell{border:1px solid var(--grid); border-radius:10px; padding:8px; min-height:100px; background:rgba(255,255,255,.03)}
     .cell.head{min-height:auto; text-align:center; font-size:12px; color:var(--muted)}
     .event{margin:4px 0; padding:6px 8px; border:1px solid var(--grid); border-radius:8px; background:rgba(0,0,0,.25); font-size:12px; cursor:pointer}
+    .event.draggable{cursor:grab}
+    .event.draggable:active{cursor:grabbing}
+    .event.dragging{opacity:.6; filter:var(--glow)}
     .event:hover{filter:var(--glow)}
+    .cell.drag-over{outline:1px dashed rgba(0,234,255,.6); background:rgba(0,234,255,.08)}
     .when{opacity:.8; font-size:11px}
 
     /* Right panel: calendars + tasks */
@@ -405,6 +409,9 @@
     };
     let googleEvents = [];
     let sphairaEvents = [];
+    let draggingEvent = null;
+    let dragSourceEl = null;
+    let isDraggingEvent = false;
 
     function setStatus(t){ statusEl.textContent = t; }
     function setAuthLocked(on){
@@ -439,6 +446,135 @@
       if(!value) return null;
       const d = new Date(value);
       return Number.isNaN(d.valueOf()) ? null : d;
+    }
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    function isSameDay(a,b){
+      if(!a || !b) return false;
+      return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    }
+    function canEventBeDragged(ev){
+      return !!(ev && !ev.isSphaira && !ev.recurring && ev.id && ev.calId);
+    }
+    function clearDragState(){
+      if(dragSourceEl){
+        dragSourceEl.classList.remove('dragging');
+        dragSourceEl = null;
+      }
+      document.querySelectorAll('.cell.drag-over').forEach(el=> el.classList.remove('drag-over'));
+      draggingEvent = null;
+      isDraggingEvent = false;
+    }
+    function setupEventInteractions(el, ev){
+      if(ev.isSphaira){
+        el.style.cursor = 'default';
+        return;
+      }
+      el.onclick = (e)=>{
+        if(isDraggingEvent){ e.preventDefault(); return; }
+        openEventModal({ existing: ev });
+      };
+      if(!canEventBeDragged(ev)) return;
+      el.classList.add('draggable');
+      el.draggable = true;
+      el.addEventListener('dragstart', (event)=>{
+        if(!canEventBeDragged(ev)) return;
+        draggingEvent = ev;
+        dragSourceEl = el;
+        isDraggingEvent = true;
+        el.classList.add('dragging');
+        if(event.dataTransfer){
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', ev.id || 'event');
+        }
+      });
+      el.addEventListener('dragend', ()=>{
+        clearDragState();
+      });
+    }
+    function parseCellDate(cell){
+      if(!cell || !cell.dataset) return null;
+      const iso = cell.dataset.date;
+      if(!iso) return null;
+      const d = new Date(iso);
+      return Number.isNaN(d.valueOf()) ? null : d;
+    }
+    function setupCellDropTarget(cell){
+      cell.addEventListener('dragover', (e)=>{
+        if(!canEventBeDragged(draggingEvent)) return;
+        if(!parseCellDate(e.currentTarget)) return;
+        e.preventDefault();
+        if(e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+      });
+      cell.addEventListener('dragenter', (e)=>{
+        if(!canEventBeDragged(draggingEvent)) return;
+        if(!parseCellDate(e.currentTarget)) return;
+        e.currentTarget.classList.add('drag-over');
+      });
+      cell.addEventListener('dragleave', (e)=>{
+        const target = e.currentTarget;
+        if(!target.contains(e.relatedTarget)){
+          target.classList.remove('drag-over');
+        }
+      });
+      cell.addEventListener('drop', async (e)=>{
+        if(!canEventBeDragged(draggingEvent)) return;
+        const cellEl = e.currentTarget;
+        const targetDate = parseCellDate(cellEl);
+        cellEl.classList.remove('drag-over');
+        if(!targetDate) return;
+        e.preventDefault();
+        const eventToMove = draggingEvent;
+        clearDragState();
+        if(!eventToMove) return;
+        if(isSameDay(eventToMove.startDate, targetDate)) return;
+        await moveEventToDate(eventToMove, targetDate);
+      });
+    }
+    async function moveEventToDate(ev, targetDate){
+      try{
+        await waitForGapiReady();
+        if(!window.gapi || !gapi.client || !gapi.client.calendar || !gapi.client.calendar.events){
+          alert('Connectez-vous à Google pour déplacer un événement.');
+          return;
+        }
+        setStatus('Déplacement de l’événement…');
+        if(ev.allDay){
+          const startDateStr = ev.raw?.start?.date || (ev.startRaw?.slice?.(0,10)) || toDateOnlyString(startOfDay(ev.startDate));
+          const endDateStr = ev.raw?.end?.date || (ev.endRaw?.slice?.(0,10)) || toDateOnlyString(addDays(ev.startDate, 1));
+          const startDate = startDateStr ? toDate(`${startDateStr}T00:00`) : startOfDay(ev.startDate);
+          const endDate = endDateStr ? toDate(`${endDateStr}T00:00`) : addDays(startDate, 1);
+          let durationDays = Math.max(1, Math.round((endDate - startDate) / DAY_MS));
+          if(!Number.isFinite(durationDays) || durationDays < 1) durationDays = 1;
+          const newStartDay = startOfDay(targetDate);
+          const resource = {
+            start: { date: toDateOnlyString(newStartDay) },
+            end: { date: toDateOnlyString(addDays(newStartDay, durationDays)) }
+          };
+          await gapi.client.calendar.events.patch({ calendarId: ev.calId, eventId: ev.id, resource });
+        }else{
+          const startRaw = ev.raw?.start?.dateTime || ev.startRaw;
+          const endRaw = ev.raw?.end?.dateTime || ev.endRaw;
+          const startBase = toDate(startRaw) || ev.startDate;
+          const endBase = toDate(endRaw) || ev.endDate || startBase;
+          const durationMs = Math.max(0, endBase.valueOf() - startBase.valueOf());
+          const newStart = new Date(targetDate);
+          newStart.setHours(startBase.getHours(), startBase.getMinutes(), startBase.getSeconds(), startBase.getMilliseconds());
+          const newEnd = new Date(newStart.valueOf() + durationMs);
+          const resource = {
+            start: { dateTime: newStart.toISOString() },
+            end: { dateTime: newEnd.toISOString() }
+          };
+          if(ev.raw?.start?.timeZone){ resource.start.timeZone = ev.raw.start.timeZone; }
+          if(ev.raw?.end?.timeZone){ resource.end.timeZone = ev.raw.end.timeZone; }
+          await gapi.client.calendar.events.patch({ calendarId: ev.calId, eventId: ev.id, resource });
+        }
+        setStatus('Événement déplacé.');
+        await loadEvents();
+      }catch(err){
+        console.error('[ORIS] moveEventToDate error:', err);
+        alert('Impossible de déplacer cet événement. Vérifiez vos permissions.');
+        setStatus('Échec du déplacement.');
+      }
     }
 
     // ====== AUTH ======
@@ -843,6 +979,7 @@
         for(let i=0;i<days;i++){
           const day = addDays(first,i);
           const cell = document.createElement('div'); cell.className='cell'; cell.dataset.date = day.toISOString();
+          setupCellDropTarget(cell);
           const head = document.createElement('div'); head.style.display='flex'; head.style.justifyContent='space-between'; head.style.alignItems='center';
           head.innerHTML = `<strong>${day.getDate()}</strong>`;
           const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
@@ -860,11 +997,7 @@
             const div = document.createElement('div'); div.className='event';
             const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
             div.innerHTML = `<div style="display:flex; gap:6px; align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
-            if(ev.isSphaira){
-              div.style.cursor = 'default';
-            }else{
-              div.onclick = ()=> openEventModal({ existing: ev });
-            }
+            setupEventInteractions(div, ev);
             list.appendChild(div);
           });
           cell.appendChild(list);
@@ -887,6 +1020,7 @@
           for(let i=0;i<7;i++){
             const d = addDays(startOfWeek(cursor), i);
             const cell = document.createElement('div'); cell.className='cell'; cell.dataset.date = d.toISOString();
+            setupCellDropTarget(cell);
             const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
             plus.onclick = (e)=>{ e.stopPropagation(); openEventModal({ start: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2), end: new Date(d.getFullYear(), d.getMonth(), d.getDate(), row*2+1) }); };
             cell.appendChild(plus);
@@ -897,11 +1031,7 @@
               const div=document.createElement('div'); div.className='event';
               const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
               div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
-              if(ev.isSphaira){
-                div.style.cursor = 'default';
-              }else{
-                div.onclick = ()=> openEventModal({ existing: ev });
-              }
+              setupEventInteractions(div, ev);
               cell.appendChild(div);
             });
             gridEl.appendChild(cell);
@@ -914,6 +1044,8 @@
         const head = document.createElement('div'); head.className='cell head'; head.textContent = d.toLocaleDateString('fr-FR',{weekday:'long', day:'numeric', month:'long', year:'numeric'});
         gridEl.appendChild(head);
         const cell = document.createElement('div'); cell.className='cell';
+        cell.dataset.date = startOfDay(d).toISOString();
+        setupCellDropTarget(cell);
         const plus = document.createElement('button'); plus.className='btn small'; plus.textContent='+'; plus.title='Nouvel événement';
         plus.onclick = ()=> openEventModal({ start: d, end: addDays(d,0), allDay:false });
         cell.appendChild(plus);
@@ -925,11 +1057,7 @@
           const endDisplay = ev.endDate || ev.startDate;
           const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} → ${endDisplay.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
           div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>${ev.location?`<div class="when">📍 ${escapeHtml(ev.location)}</div>`:''}`;
-          if(ev.isSphaira){
-            div.style.cursor = 'default';
-          }else{
-            div.onclick = ()=> openEventModal({ existing: ev });
-          }
+          setupEventInteractions(div, ev);
           cell.appendChild(div);
         });
         gridEl.appendChild(cell);
