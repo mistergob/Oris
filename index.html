@@ -396,6 +396,15 @@
     let currentEvent = null; // editing
     let visibleCalendars = new Set();
     let hasLoadedCalendars = false;
+    const SPHAIRA_CALENDAR_ID = 'sphaira-tasks';
+    const SPHAIRA_CALENDAR = {
+      id: SPHAIRA_CALENDAR_ID,
+      summary: 'Tâches SPHAIRA',
+      backgroundColor: '#00EAFF',
+      isSphaira: true
+    };
+    let googleEvents = [];
+    let sphairaEvents = [];
 
     function setStatus(t){ statusEl.textContent = t; }
     function setAuthLocked(on){
@@ -503,9 +512,74 @@
       }catch{}
       gapi.client.setToken('');
       if(refreshTimer){ clearInterval(refreshTimer); refreshTimer=null; }
-      calendars=[]; events=[]; visibleCalendars = new Set(); hasLoadedCalendars = false; render();
+      calendars=[];
+      googleEvents = [];
+      events=[];
+      visibleCalendars = new Set();
+      hasLoadedCalendars = false;
+      calendarSelect.innerHTML = `<option value="">Tous les calendriers</option><option value="${SPHAIRA_CALENDAR_ID}">${SPHAIRA_CALENDAR.summary} (SPHAIRA)</option>`;
+      calendarSelect.value = '';
+      fCalendar.innerHTML = '';
+      calListEl.innerHTML = '';
+      const emptyMsg = document.createElement('div');
+      emptyMsg.className = 'status';
+      emptyMsg.textContent = 'Aucun calendrier Google disponible.';
+      calListEl.appendChild(emptyMsg);
+      calListEl.appendChild(createCalendarToggle(SPHAIRA_CALENDAR, true));
+      mergeEvents();
       logoutBtn.disabled = true;
       setStatus('Déconnecté.');
+    }
+
+    function createCalendarToggle(cal, shouldCheck){
+      const item = document.createElement('label');
+      item.className = 'cal-item';
+      item.dataset.calendarId = cal.id;
+
+      const toggle = document.createElement('input');
+      toggle.type = 'checkbox';
+      toggle.checked = shouldCheck;
+      toggle.setAttribute('aria-label', cal.isSphaira ? 'Afficher les tâches SPHAIRA' : `Afficher le calendrier ${cal.summary}`);
+
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = cal.backgroundColor || '#00EAFF';
+
+      const text = document.createElement('div');
+      const labelText = document.createElement('strong');
+      labelText.textContent = cal.summary;
+      text.appendChild(labelText);
+      if(cal.isSphaira){
+        const small = document.createElement('small');
+        small.textContent = ' (SPHAIRA)';
+        text.appendChild(small);
+      }else if(cal.primary){
+        const small = document.createElement('small');
+        small.textContent = ' (principal)';
+        text.appendChild(small);
+      }
+
+      if(shouldCheck){
+        visibleCalendars.add(cal.id);
+      }else{
+        item.classList.add('cal-hidden');
+      }
+
+      toggle.addEventListener('change', ()=>{
+        if(toggle.checked){
+          visibleCalendars.add(cal.id);
+          item.classList.remove('cal-hidden');
+        }else{
+          visibleCalendars.delete(cal.id);
+          item.classList.add('cal-hidden');
+        }
+        render();
+      });
+
+      item.appendChild(toggle);
+      item.appendChild(dot);
+      item.appendChild(text);
+      return item;
     }
 
     // ====== CALENDAR API ======
@@ -526,68 +600,38 @@
       calendars = (res.result.items||[]).map(c=>({
         id:c.id, summary:c.summary, backgroundColor: c.backgroundColor || '#0ea5e9', primary: !!c.primary
       }));
-      // UI select
+      const previousSelectionValue = calendarSelect.value;
+      const calendarsForSelect = [...calendars, SPHAIRA_CALENDAR];
       calendarSelect.innerHTML = `<option value="">Tous les calendriers</option>` +
-        calendars.map(c=>`<option value="${c.id}">${c.summary}${c.primary?' (principal)':''}</option>`).join('');
-      // modal select
+        calendarsForSelect.map(c=>{
+          const extra = c.isSphaira ? ' (SPHAIRA)' : (c.primary?' (principal)':'');
+          return `<option value="${c.id}">${c.summary}${extra}</option>`;
+        }).join('');
+      if(calendarsForSelect.some(c=>c.id === previousSelectionValue)){
+        calendarSelect.value = previousSelectionValue;
+      }else{
+        calendarSelect.value = '';
+      }
+      // modal select (Google only)
       fCalendar.innerHTML = calendars.map(c=>`<option value="${c.id}">${c.summary}${c.primary?' (principal)':''}</option>`).join('');
       // list with toggles
       const previousSelection = hasLoadedCalendars ? new Set(visibleCalendars) : null;
       visibleCalendars = new Set();
       calListEl.innerHTML = '';
       if(!calendars.length){
-        calListEl.innerHTML = '<div class="status">Aucun calendrier disponible.</div>';
-      }else{
-        calendars.forEach(c=>{
-          const item = document.createElement('label');
-          item.className = 'cal-item';
-          item.dataset.calendarId = c.id;
-
-          const toggle = document.createElement('input');
-          toggle.type = 'checkbox';
-          const shouldCheck = previousSelection ? previousSelection.has(c.id) : true;
-          toggle.checked = shouldCheck;
-          toggle.setAttribute('aria-label', `Afficher le calendrier ${c.summary}`);
-
-          const dot = document.createElement('span');
-          dot.className = 'dot';
-          dot.style.background = c.backgroundColor;
-
-          const text = document.createElement('div');
-          const labelText = document.createElement('strong');
-          labelText.textContent = c.summary;
-          text.appendChild(labelText);
-          if(c.primary){
-            const small = document.createElement('small');
-            small.textContent = ' (principal)';
-            text.appendChild(small);
-          }
-
-          if(shouldCheck){
-            visibleCalendars.add(c.id);
-          }else{
-            item.classList.add('cal-hidden');
-          }
-
-          toggle.addEventListener('change', ()=>{
-            if(toggle.checked){
-              visibleCalendars.add(c.id);
-              item.classList.remove('cal-hidden');
-            }else{
-              visibleCalendars.delete(c.id);
-              item.classList.add('cal-hidden');
-            }
-            render();
-          });
-
-          item.appendChild(toggle);
-          item.appendChild(dot);
-          item.appendChild(text);
-          calListEl.appendChild(item);
-        });
+        const msg = document.createElement('div');
+        msg.className = 'status';
+        msg.textContent = 'Aucun calendrier Google disponible.';
+        calListEl.appendChild(msg);
       }
+      calendars.forEach(c=>{
+        const shouldCheck = previousSelection ? previousSelection.has(c.id) : true;
+        calListEl.appendChild(createCalendarToggle(c, shouldCheck));
+      });
+      const shouldShowSphaira = previousSelection ? previousSelection.has(SPHAIRA_CALENDAR_ID) : true;
+      calListEl.appendChild(createCalendarToggle(SPHAIRA_CALENDAR, shouldShowSphaira));
       hasLoadedCalendars = true;
-      render();
+      mergeEvents();
     }
 
     function currentRange(){
@@ -607,10 +651,43 @@
       return { start, end, label };
     }
 
+    function mergeEvents(){
+      const { label } = currentRange();
+      periodLabel.textContent = label;
+      const sel = calendarSelect.value;
+      if(sel === SPHAIRA_CALENDAR_ID){
+        events = sphairaEvents.slice();
+      }else if(sel){
+        events = googleEvents.slice();
+      }else{
+        events = googleEvents.slice();
+        if(sphairaEvents.length){
+          events = events.concat(sphairaEvents);
+        }
+        if(!googleEvents.length){
+          events = sphairaEvents.slice();
+        }
+      }
+      render();
+    }
+
     async function loadEvents(){
       try{
         const { start, end, label } = currentRange();
         periodLabel.textContent = label;
+
+        if(calendarSelect.value === SPHAIRA_CALENDAR_ID){
+          googleEvents = [];
+          mergeEvents();
+          return;
+        }
+
+        const hasCalendarApi = window.gapi && gapi.client && gapi.client.calendar && gapi.client.calendar.events;
+        if(!hasCalendarApi){
+          googleEvents = [];
+          mergeEvents();
+          return;
+        }
 
         const params = {
           calendarId: 'primary', // we’ll loop later
@@ -625,6 +702,11 @@
         let evts = [];
 
         const calendarsToQuery = sel ? calendars.filter(c=>c.id===sel) : calendars;
+        if(!calendarsToQuery.length){
+          googleEvents = [];
+          mergeEvents();
+          return;
+        }
         for(const cal of calendarsToQuery){
           const r = await gapi.client.calendar.events.list({ ...params, calendarId: cal.id });
           const items = (r.result.items||[]).map(e=>{
@@ -651,13 +733,14 @@
             allDay,
             hangoutLink: e.hangoutLink || '',
             recurring: !!e.recurrence?.length,
-            raw:e
+            raw:e,
+            isSphaira:false
           };
         });
           evts.push(...items);
         }
-        events = evts;
-        render();
+        googleEvents = evts;
+        mergeEvents();
       }catch(err){
         console.error('[ORIS] loadEvents error:', err);
         setStatus('Erreur lors du chargement des événements.');
@@ -777,7 +860,11 @@
             const div = document.createElement('div'); div.className='event';
             const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
             div.innerHTML = `<div style="display:flex; gap:6px; align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
-            div.onclick = ()=> openEventModal({ existing: ev });
+            if(ev.isSphaira){
+              div.style.cursor = 'default';
+            }else{
+              div.onclick = ()=> openEventModal({ existing: ev });
+            }
             list.appendChild(div);
           });
           cell.appendChild(list);
@@ -810,7 +897,11 @@
               const div=document.createElement('div'); div.className='event';
               const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
               div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
-              div.onclick = ()=> openEventModal({ existing: ev });
+              if(ev.isSphaira){
+                div.style.cursor = 'default';
+              }else{
+                div.onclick = ()=> openEventModal({ existing: ev });
+              }
               cell.appendChild(div);
             });
             gridEl.appendChild(cell);
@@ -834,7 +925,11 @@
           const endDisplay = ev.endDate || ev.startDate;
           const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} → ${endDisplay.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
           div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>${ev.location?`<div class="when">📍 ${escapeHtml(ev.location)}</div>`:''}`;
-          div.onclick = ()=> openEventModal({ existing: ev });
+          if(ev.isSphaira){
+            div.style.cursor = 'default';
+          }else{
+            div.onclick = ()=> openEventModal({ existing: ev });
+          }
           cell.appendChild(div);
         });
         gridEl.appendChild(cell);
@@ -1057,13 +1152,62 @@
       }
       return tasks;
     }
+    function taskToEvent(task){
+      const startCandidate = toDate(task.start) || toDate(task.end);
+      if(!startCandidate) return null;
+      const endCandidate = toDate(task.end) || startCandidate;
+      const hasTimeInfo = (task.start && task.start.includes('T')) || (task.end && task.end.includes('T'));
+      const allDay = !hasTimeInfo;
+      const startDate = allDay ? startOfDay(startCandidate) : startCandidate;
+      let endDateRaw = allDay ? startOfDay(addDays(endCandidate, 1)) : endCandidate;
+      if(allDay && endDateRaw <= startDate){ endDateRaw = addDays(startDate, 1); }
+      if(!allDay && endDateRaw < startDate){ endDateRaw = startDate; }
+      const displayEnd = allDay ? addDays(endDateRaw, -1) : endDateRaw;
+      const startRaw = allDay ? toDateOnlyString(startDate) : startDate.toISOString();
+      const endRaw = allDay ? toDateOnlyString(endDateRaw) : endDateRaw.toISOString();
+      const context = ['Tâches SPHAIRA'];
+      if(task.nodeName){ context.push(task.nodeName); }
+      if(task.status){ context.push(task.status); }
+      return {
+        id: task.id,
+        calId: SPHAIRA_CALENDAR_ID,
+        calName: context.join(' · '),
+        color: task.color || SPHAIRA_CALENDAR.backgroundColor,
+        summary: task.title || '(Sans titre)',
+        location: '',
+        description: task.desc || '',
+        startRaw,
+        endRaw,
+        startDate,
+        endDate: displayEnd,
+        allDay,
+        hangoutLink: '',
+        recurring: false,
+        isSphaira: true,
+        raw: { task }
+      };
+    }
     function renderTasks(){
       const { json } = loadWorkspaceFromStorage();
       const list = json ? extractTasks(json) : [];
-      if(!list.length){ taskListEl.innerHTML = '<div class="status">Aucune tâche trouvée.</div>'; return; }
-      taskListEl.innerHTML = '';
-      list.sort((a,b)=> (a.start||'').localeCompare(b.start||'') || a.title.localeCompare(b.title))
-        .forEach(t=>{
+      list.sort((a,b)=> (a.start||'').localeCompare(b.start||'') || a.title.localeCompare(b.title));
+      sphairaEvents = list.map(taskToEvent).filter(Boolean);
+
+      if(!calendarSelect.querySelector(`option[value="${SPHAIRA_CALENDAR_ID}"]`)){
+        const opt = document.createElement('option');
+        opt.value = SPHAIRA_CALENDAR_ID;
+        opt.textContent = `${SPHAIRA_CALENDAR.summary} (SPHAIRA)`;
+        calendarSelect.appendChild(opt);
+      }
+      if(!calListEl.querySelector(`.cal-item[data-calendar-id="${SPHAIRA_CALENDAR_ID}"]`)){
+        calListEl.appendChild(createCalendarToggle(SPHAIRA_CALENDAR, true));
+      }
+
+      if(!list.length){
+        taskListEl.innerHTML = '<div class="status">Aucune tâche trouvée.</div>';
+      }else{
+        taskListEl.innerHTML = '';
+        list.forEach(t=>{
           const el = document.createElement('div');
           el.className='task';
           el.innerHTML = `<span class="dot" style="background:${t.color}"></span>
@@ -1076,6 +1220,8 @@
             </div>`;
           taskListEl.appendChild(el);
         });
+      }
+      mergeEvents();
     }
     toggleTasksBtn.onclick = ()=>{
       const hidden = tasksSection.style.display === 'none';
