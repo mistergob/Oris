@@ -391,6 +391,11 @@
     const deleteEventBtn = document.getElementById('deleteEventBtn');
     const closeEventBtn = document.getElementById('closeEventBtn');
     const newEventBtn = document.getElementById('newEventBtn');
+    const calendarFieldWrapper = fCalendar ? fCalendar.closest('div') : null;
+    const calendarLabelEl = calendarFieldWrapper ? calendarFieldWrapper.querySelector('label') : null;
+    const defaultCalendarLabel = calendarLabelEl ? calendarLabelEl.textContent : 'Calendrier';
+    const meetFieldWrapper = fMeet ? fMeet.closest('div') : null;
+    const meetWrapperDefaultDisplay = meetFieldWrapper ? meetFieldWrapper.style.display : '';
 
     let googleTokenClient = null;
     let currentView = 'month';
@@ -409,6 +414,7 @@
     };
     let googleEvents = [];
     let sphairaEvents = [];
+    let sphairaWorkspace = { json:null, storageKey:null };
     let draggingEvent = null;
     let dragSourceEl = null;
     let isDraggingEvent = false;
@@ -453,7 +459,11 @@
       return a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
     }
     function canEventBeDragged(ev){
-      return !!(ev && !ev.isSphaira && !ev.recurring && ev.id && ev.calId);
+      if(!ev) return false;
+      if(ev.isSphaira){
+        return !!ev.raw?.task;
+      }
+      return !!(!ev.recurring && ev.id && ev.calId);
     }
     function clearDragState(){
       if(dragSourceEl){
@@ -465,10 +475,7 @@
       isDraggingEvent = false;
     }
     function setupEventInteractions(el, ev){
-      if(ev.isSphaira){
-        el.style.cursor = 'default';
-        return;
-      }
+      el.style.cursor = 'pointer';
       el.onclick = (e)=>{
         if(isDraggingEvent){ e.preventDefault(); return; }
         openEventModal({ existing: ev });
@@ -532,6 +539,20 @@
     }
     async function moveEventToDate(ev, targetDate){
       try{
+        if(ev.isSphaira){
+          const moved = moveSphairaTaskToDate(ev, targetDate);
+          if(!moved){
+            setStatus('Impossible de déplacer la tâche SPHAIRA.');
+            return;
+          }
+          if(!persistSphairaWorkspace()){
+            setStatus('Échec de l’enregistrement SPHAIRA.');
+            return;
+          }
+          renderTasks();
+          setStatus('Tâche SPHAIRA déplacée.');
+          return;
+        }
         await waitForGapiReady();
         if(!window.gapi || !gapi.client || !gapi.client.calendar || !gapi.client.calendar.events){
           alert('Connectez-vous à Google pour déplacer un événement.');
@@ -1069,15 +1090,31 @@
     // ====== EVENT MODAL ======
     function openEventModal({ existing=null, start=null, end=null, allDay=false }){
       currentEvent = existing;
-      evtTitle.textContent = existing ? 'Modifier l’événement' : 'Nouvel événement';
+      const isSphaira = !!existing?.isSphaira;
+      evtTitle.textContent = existing ? (isSphaira ? 'Modifier la tâche' : 'Modifier l’événement') : 'Nouvel événement';
       deleteEventBtn.style.display = existing ? '' : 'none';
 
-      // calendars select
-      fCalendar.innerHTML = calendars.map(c=>`<option value="${c.id}">${c.summary}${c.primary?' (principal)':''}</option>`).join('');
+      if(isSphaira){
+        if(calendarLabelEl) calendarLabelEl.textContent = 'Source';
+        fCalendar.innerHTML = `<option value="${SPHAIRA_CALENDAR_ID}">${SPHAIRA_CALENDAR.summary} (SPHAIRA)</option>`;
+        fCalendar.value = SPHAIRA_CALENDAR_ID;
+        fCalendar.disabled = true;
+        if(meetFieldWrapper) meetFieldWrapper.style.display = 'none';
+        fMeet.value = '';
+        fMeet.disabled = true;
+      }else{
+        if(calendarLabelEl) calendarLabelEl.textContent = defaultCalendarLabel;
+        fCalendar.innerHTML = calendars.map(c=>`<option value="${c.id}">${c.summary}${c.primary?' (principal)':''}</option>`).join('');
+        fCalendar.disabled = false;
+        if(meetFieldWrapper) meetFieldWrapper.style.display = meetWrapperDefaultDisplay || '';
+        fMeet.disabled = false;
+      }
 
       if(existing){
         fTitle.value = existing.summary || '';
-        fCalendar.value = existing.calId;
+        if(!isSphaira){
+          fCalendar.value = existing.calId;
+        }
         if(existing.allDay){
           const s = toDate(`${existing.startRaw}T00:00`) || new Date();
           const exclusiveEnd = toDate(`${(existing.endRaw || existing.startRaw)}T00:00`);
@@ -1092,10 +1129,14 @@
         }
         fLocation.value = existing.location || '';
         fDesc.value = existing.description || '';
-        fMeet.value = existing.raw.conferenceData?.entryPoints?.length ? '' : '';
+        fMeet.value = isSphaira ? '' : (existing.raw.conferenceData?.entryPoints?.length ? '' : '');
       }else{
         fTitle.value = '';
-        fCalendar.value = (calendars.find(c=>c.primary)?.id) || calendars[0]?.id || '';
+        if(isSphaira){
+          fCalendar.value = SPHAIRA_CALENDAR_ID;
+        }else{
+          fCalendar.value = (calendars.find(c=>c.primary)?.id) || calendars[0]?.id || '';
+        }
         const s = start || new Date();
         fStart.value = toLocalInputValue(s, !allDay);
         if(allDay){
@@ -1137,12 +1178,55 @@
         const endValue = fEnd.value;
         if(!startValue || !endValue){ alert('Veuillez renseigner des dates de début et de fin.'); return; }
         const allDay = startValue.slice(11) === '00:00' && endValue.slice(11) === '00:00';
+        const summary = fTitle.value.trim();
+        const description = fDesc.value;
+        const location = fLocation.value;
+
+        if(currentEvent?.isSphaira){
+          if(allDay){
+            const startDateStr = startValue.slice(0,10);
+            const endDateStr = endValue.slice(0,10);
+            if(!startDateStr || !endDateStr){ alert('Format de date invalide.'); return; }
+            const startDay = toDate(`${startDateStr}T00:00`);
+            const endDay = toDate(`${endDateStr}T00:00`);
+            if(!startDay || !endDay){ alert('Format de date invalide.'); return; }
+            if(endDay < startDay){ alert('La date de fin ne peut pas être antérieure à la date de début.'); return; }
+            const ok = updateSphairaTask(currentEvent, {
+              summary,
+              description,
+              location,
+              allDay:true,
+              startDate: toDateOnlyString(startDay),
+              endDate: toDateOnlyString(endDay)
+            });
+            if(!ok){ alert('Impossible de mettre à jour la tâche SPHAIRA.'); return; }
+          }else{
+            const start = toDate(startValue);
+            const end = toDate(endValue);
+            if(!start || !end){ alert('Dates/heures invalides.'); return; }
+            if(end < start){ alert('La date de fin ne peut pas être antérieure à la date de début.'); return; }
+            const ok = updateSphairaTask(currentEvent, {
+              summary,
+              description,
+              location,
+              allDay:false,
+              startISO: start.toISOString(),
+              endISO: end.toISOString()
+            });
+            if(!ok){ alert('Impossible de mettre à jour la tâche SPHAIRA.'); return; }
+          }
+          if(!persistSphairaWorkspace()){ alert('Impossible d’enregistrer les modifications SPHAIRA.'); return; }
+          renderTasks();
+          closeEventModal();
+          setStatus('Tâche SPHAIRA enregistrée.');
+          return;
+        }
         const base = {
           id: currentEvent?.id || null,
           calId: fCalendar.value,
-          summary: fTitle.value.trim(),
-          description: fDesc.value,
-          location: fLocation.value,
+          summary,
+          description,
+          location,
           allDay,
           meet: fMeet.value
         };
@@ -1172,7 +1256,18 @@
     };
     deleteEventBtn.onclick = async ()=>{
       if(!currentEvent) return;
-      if(!confirm('Supprimer cet événement ?')) return;
+      const isSphaira = !!currentEvent.isSphaira;
+      const confirmed = confirm(isSphaira ? 'Supprimer cette tâche ?' : 'Supprimer cet événement ?');
+      if(!confirmed) return;
+      if(isSphaira){
+        const removed = deleteSphairaTask(currentEvent);
+        if(!removed){ alert('Impossible de supprimer cette tâche SPHAIRA.'); return; }
+        if(!persistSphairaWorkspace()){ alert('Impossible d’enregistrer les modifications SPHAIRA.'); return; }
+        closeEventModal();
+        renderTasks();
+        setStatus('Tâche SPHAIRA supprimée.');
+        return;
+      }
       try{
         await deleteEvent(currentEvent.calId, currentEvent.id);
         closeEventModal();
@@ -1199,12 +1294,51 @@
       }
       return { json:null, storageKey:null };
     }
+    function persistSphairaWorkspace(){
+      if(!sphairaWorkspace || !sphairaWorkspace.storageKey || !sphairaWorkspace.json){
+        return false;
+      }
+      try{
+        localStorage.setItem(sphairaWorkspace.storageKey, JSON.stringify(sphairaWorkspace.json));
+        return true;
+      }catch(err){
+        console.error('[ORIS] Persist SPHAIRA failed:', err);
+        return false;
+      }
+    }
+    function gatherFieldNames(task, candidates, fallback){
+      const names = [];
+      const seen = new Set();
+      (candidates||[]).forEach(name=>{
+        if(!name || seen.has(name)) return;
+        if(task && Object.prototype.hasOwnProperty.call(task, name)){
+          names.push(name);
+          seen.add(name);
+        }
+      });
+      if(!names.length && fallback){
+        names.push(fallback);
+      }
+      return names;
+    }
     function normalizeTask(task, meta={}){
       const title = task?.title || task?.name || '(Sans titre)';
       const desc = task?.desc || task?.description || '';
       const start = task?.start || task?.startDate || task?.dueDate || '';
-      const end = task?.end || task?.endDate || '';
+      const end = task?.end || task?.endDate || task?.dueDate || '';
       const status = task?.status || meta.status || '';
+      const location = task?.location || task?.place || '';
+      const fields = {
+        title: gatherFieldNames(task, ['title','name'], 'title'),
+        desc: gatherFieldNames(task, ['desc','description'], 'desc'),
+        location: gatherFieldNames(task, ['location','place'], location ? 'location' : ''),
+        start: gatherFieldNames(task, ['start','startDate'], 'start'),
+        end: gatherFieldNames(task, ['end','endDate','dueDate'], 'end'),
+        status: gatherFieldNames(task, ['status'], status ? 'status' : ''),
+        color: gatherFieldNames(task, ['color'], '')
+      };
+      if(!fields.end.length){ fields.end = ['end']; }
+      if(!fields.start.length){ fields.start = ['start']; }
       return {
         id: task?.id || `${meta.prefix||'task'}-${Math.random().toString(36).slice(2,9)}`,
         title,
@@ -1212,67 +1346,88 @@
         start,
         end,
         status,
+        location,
         nodeName: meta.nodeName || '',
-        color: task?.color || meta.color || '#00EAFF'
+        color: task?.color || meta.color || '#00EAFF',
+        _source: task,
+        _container: meta.container || null,
+        _index: meta.index ?? null,
+        _storageKey: meta.storageKey || null,
+        _fields: fields
       };
     }
-    function extractTasks(ws){
+    function extractTasks(ws, storageKey){
       if(!ws) return [];
       const tasks=[];
-      const pushTasks = (list=[], meta={})=>{
-        list.filter(Boolean).forEach(t=> tasks.push(normalizeTask(t, meta)));
+      const pushTasks = (list, meta={})=>{
+        if(!Array.isArray(list)) return;
+        list.forEach((t, index)=>{
+          if(!t) return;
+          tasks.push(normalizeTask(t, { ...meta, container:list, index, storageKey }));
+        });
       };
       if(Array.isArray(ws)){
-        pushTasks(ws);
+        pushTasks(ws, { storageKey });
       }
       if(Array.isArray(ws.tasks)){
-        pushTasks(ws.tasks);
+        pushTasks(ws.tasks, { storageKey });
       }
       if(Array.isArray(ws.nodes)){
         const nodes = Object.fromEntries(ws.nodes.map(n=>[n.id, {
           name:n.text||n.title||n.id,
           color:n.color||'#00EAFF'
         }]));
-        ws.nodes.forEach(n=>{
+        ws.nodes.forEach((n, nodeIndex)=>{
+          const list = Array.isArray(n.tasks) ? n.tasks : null;
           const meta = {
             nodeName: nodes[n.id]?.name || n.id,
             color: nodes[n.id]?.color || '#00EAFF',
-            prefix: `node-${n.id}`
+            prefix: `node-${n.id}`,
+            storageKey,
+            container: list,
+            nodeIndex
           };
-          pushTasks(n.tasks || [], meta);
+          pushTasks(list, meta);
         });
       }
       const collections = ['columns','lists'];
       collections.forEach(key=>{
         if(Array.isArray(ws[key])){
-          ws[key].forEach(col=>{
+          ws[key].forEach((col, colIndex)=>{
             const meta = {
               nodeName: col.name || col.title || '',
               color: col.color || '#00EAFF',
               status: col.status || col.name || '',
-              prefix: `${key}-${col.id||col.name||'col'}`
+              prefix: `${key}-${col.id||col.name||'col'}`,
+              storageKey
             };
-            pushTasks(col.tasks || col.cards || [], meta);
+            const tasksList = Array.isArray(col.tasks) ? col.tasks : Array.isArray(col.cards) ? col.cards : null;
+            pushTasks(tasksList, { ...meta, container: tasksList, colIndex });
           });
         }
       });
       if(Array.isArray(ws.boards)){
-        ws.boards.forEach(board=>{
-          pushTasks(board.tasks || [], {
+        ws.boards.forEach((board, boardIndex)=>{
+          const boardTasks = Array.isArray(board.tasks) ? board.tasks : null;
+          pushTasks(boardTasks, {
             nodeName: board.name || board.title || '',
             color: board.color || '#00EAFF',
-            prefix: `board-${board.id||board.name||'board'}`
+            prefix: `board-${board.id||board.name||'board'}`,
+            storageKey,
+            container: boardTasks
           });
           collections.forEach(key=>{
             if(Array.isArray(board[key])){
-              board[key].forEach(col=>{
+              board[key].forEach((col, colIndex)=>{
                 const meta = {
                   nodeName: col.name || col.title || board.name || '',
                   color: col.color || board.color || '#00EAFF',
                   status: col.status || col.name || '',
-                  prefix: `${key}-${board.id||board.name||'board'}-${col.id||col.name||'col'}`
+                  prefix: `${key}-${board.id||board.name||'board'}-${col.id||col.name||'col'}`,
+                  storageKey
                 };
-                pushTasks(col.tasks || col.cards || [], meta);
+                const list = Array.isArray(col.tasks) ? col.tasks : Array.isArray(col.cards) ? col.cards : null;
+                pushTasks(list, { ...meta, container:list, boardIndex, colIndex });
               });
             }
           });
@@ -1302,7 +1457,7 @@
         calName: context.join(' · '),
         color: task.color || SPHAIRA_CALENDAR.backgroundColor,
         summary: task.title || '(Sans titre)',
-        location: '',
+        location: task.location || '',
         description: task.desc || '',
         startRaw,
         endRaw,
@@ -1315,11 +1470,130 @@
         raw: { task }
       };
     }
+    function setTaskField(target, fieldNames, value, fallback){
+      if(!target) return;
+      let names = Array.isArray(fieldNames) ? fieldNames.filter(Boolean) : [];
+      if((!names || !names.length) && fallback){
+        names = [fallback];
+      }
+      const used = new Set();
+      names.forEach(name=>{
+        if(!name || used.has(name)) return;
+        target[name] = value;
+        used.add(name);
+      });
+    }
+    function updateSphairaTask(ev, payload){
+      const normalized = ev?.raw?.task;
+      if(!normalized || !normalized._source || !sphairaWorkspace || !sphairaWorkspace.json){
+        return false;
+      }
+      const taskObj = normalized._source;
+      const fields = normalized._fields || {};
+      if(payload.summary !== undefined){
+        setTaskField(taskObj, fields.title, payload.summary, 'title');
+      }
+      if(payload.description !== undefined){
+        setTaskField(taskObj, fields.desc, payload.description, 'desc');
+      }
+      if(payload.location !== undefined){
+        setTaskField(taskObj, fields.location, payload.location, 'location');
+      }
+      if(payload.status !== undefined){
+        setTaskField(taskObj, fields.status, payload.status, 'status');
+      }
+      if(payload.color !== undefined){
+        setTaskField(taskObj, fields.color, payload.color, 'color');
+      }
+      if(payload.allDay){
+        if(payload.startDate){
+          setTaskField(taskObj, fields.start, payload.startDate, 'start');
+        }
+        if(payload.endDate){
+          setTaskField(taskObj, fields.end, payload.endDate, 'end');
+        }
+      }else{
+        if(payload.startISO){
+          setTaskField(taskObj, fields.start, payload.startISO, 'start');
+        }
+        if(payload.endISO){
+          setTaskField(taskObj, fields.end, payload.endISO, 'end');
+        }
+      }
+      if(payload.allDay !== undefined){
+        taskObj.allDay = !!payload.allDay;
+      }
+      return true;
+    }
+    function removeTaskRecursive(node, normalized){
+      if(!node) return false;
+      if(Array.isArray(node)){
+        for(let i=0;i<node.length;i++){
+          const item = node[i];
+          if(item && (item === normalized._source || (item.id && item.id === normalized.id))){
+            node.splice(i,1);
+            return true;
+          }
+          if(removeTaskRecursive(item, normalized)) return true;
+        }
+        return false;
+      }
+      if(typeof node === 'object'){
+        return Object.values(node).some(value=> removeTaskRecursive(value, normalized));
+      }
+      return false;
+    }
+    function deleteSphairaTask(ev){
+      const normalized = ev?.raw?.task;
+      if(!normalized) return false;
+      const container = normalized._container;
+      if(Array.isArray(container)){
+        let idx = normalized._index;
+        if(typeof idx === 'number' && container[idx] === normalized._source){
+          container.splice(idx, 1);
+          return true;
+        }
+        idx = container.findIndex(item=> item === normalized._source || (item && item.id === normalized.id));
+        if(idx >= 0){
+          container.splice(idx,1);
+          return true;
+        }
+      }
+      if(sphairaWorkspace && sphairaWorkspace.json){
+        return removeTaskRecursive(sphairaWorkspace.json, normalized);
+      }
+      return false;
+    }
+    function moveSphairaTaskToDate(ev, targetDate){
+      if(!ev || !targetDate) return false;
+      if(ev.allDay){
+        const durationDays = Math.max(1, Math.round((ev.endDate.valueOf() - ev.startDate.valueOf()) / DAY_MS) + 1);
+        const newStart = startOfDay(targetDate);
+        const newEndInclusive = addDays(newStart, durationDays - 1);
+        return updateSphairaTask(ev, {
+          allDay: true,
+          startDate: toDateOnlyString(newStart),
+          endDate: toDateOnlyString(newEndInclusive)
+        });
+      }
+      const endTimeValue = ev.endDate ? ev.endDate.valueOf() : ev.startDate.valueOf();
+      const durationMs = Math.max(0, endTimeValue - ev.startDate.valueOf());
+      const newStart = new Date(targetDate);
+      newStart.setHours(ev.startDate.getHours(), ev.startDate.getMinutes(), ev.startDate.getSeconds(), ev.startDate.getMilliseconds());
+      const newEnd = new Date(newStart.valueOf() + durationMs);
+      return updateSphairaTask(ev, {
+        allDay: false,
+        startISO: newStart.toISOString(),
+        endISO: newEnd.toISOString()
+      });
+    }
     function renderTasks(){
-      const { json } = loadWorkspaceFromStorage();
-      const list = json ? extractTasks(json) : [];
+      const { json, storageKey } = loadWorkspaceFromStorage();
+      sphairaWorkspace = { json, storageKey };
+      const list = json ? extractTasks(json, storageKey) : [];
       list.sort((a,b)=> (a.start||'').localeCompare(b.start||'') || a.title.localeCompare(b.title));
       sphairaEvents = list.map(taskToEvent).filter(Boolean);
+      const eventById = new Map(sphairaEvents.map(ev=>[ev.id, ev]));
 
       if(!calendarSelect.querySelector(`option[value="${SPHAIRA_CALENDAR_ID}"]`)){
         const opt = document.createElement('option');
@@ -1346,6 +1620,11 @@
               ${t.nodeName ? `<small>Sur : ${escapeHtml(t.nodeName)}</small>`:''}
               ${t.desc ? `<div style="margin-top:6px">${escapeHtml(t.desc)}</div>`:''}
             </div>`;
+          const relatedEvent = eventById.get(t.id);
+          if(relatedEvent){
+            el.style.cursor = 'pointer';
+            el.onclick = ()=> openEventModal({ existing: relatedEvent });
+          }
           taskListEl.appendChild(el);
         });
       }
