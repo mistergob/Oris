@@ -105,6 +105,7 @@
     .cell{border:1px solid var(--grid); border-radius:10px; padding:8px; min-height:100px; background:rgba(255,255,255,.03)}
     .cell.head{min-height:auto; text-align:center; font-size:12px; color:var(--muted)}
     .event{margin:4px 0; padding:6px 8px; border:1px solid var(--grid); border-radius:8px; background:rgba(0,0,0,.25); font-size:12px; cursor:pointer}
+    .event.objective{border-color:#39ff14; box-shadow:0 0 8px rgba(57,255,20,.85), 0 0 18px rgba(57,255,20,.45);}
     .event.draggable{cursor:grab}
     .event.draggable:active{cursor:grabbing}
     .event.dragging{opacity:.6; filter:var(--glow)}
@@ -132,6 +133,8 @@
     .cal-item.cal-hidden{opacity:.45}
     .dot{width:10px;height:10px;border-radius:9999px;border:1px solid var(--grid);flex:0 0 auto}
     .task{display:flex; align-items:flex-start; gap:8px; border:1px solid var(--grid); border-radius:10px; padding:8px; margin:6px 0; background:rgba(0,0,0,.25)}
+    .task.objective{border-color:#39ff14; box-shadow:0 0 8px rgba(57,255,20,.75), 0 0 20px rgba(57,255,20,.35);}
+    .badge-objective{display:inline-block; padding:2px 6px; border-radius:999px; border:1px solid rgba(57,255,20,.65); color:#39ff14; font-size:10px; letter-spacing:.04em; text-transform:uppercase; margin-bottom:4px;}
     .task small{color:var(--muted)}
 
     /* Modal event editor */
@@ -255,7 +258,7 @@
           <div id="calList"></div>
         </div>
         <div class="section" id="tasksSection">
-          <h3>Tâches (SPHAIRA)</h3>
+          <h3>Tâches &amp; Objectifs (SPHAIRA)</h3>
           <div id="taskList">—</div>
           <div style="margin-top:6px" class="status">Source : SPHAIRA (localStorage).</div>
         </div>
@@ -408,7 +411,7 @@
     const SPHAIRA_CALENDAR_ID = 'sphaira-tasks';
     const SPHAIRA_CALENDAR = {
       id: SPHAIRA_CALENDAR_ID,
-      summary: 'Tâches SPHAIRA',
+      summary: 'SPHAIRA — Tâches & Objectifs',
       backgroundColor: '#00EAFF',
       isSphaira: true
     };
@@ -540,9 +543,10 @@
     async function moveEventToDate(ev, targetDate){
       try{
         if(ev.isSphaira){
+          const isObjective = !!ev.isObjective;
           const moved = moveSphairaTaskToDate(ev, targetDate);
           if(!moved){
-            setStatus('Impossible de déplacer la tâche SPHAIRA.');
+            setStatus(isObjective ? 'Impossible de déplacer l’objectif SPHAIRA.' : 'Impossible de déplacer la tâche SPHAIRA.');
             return;
           }
           if(!persistSphairaWorkspace()){
@@ -550,7 +554,7 @@
             return;
           }
           renderTasks();
-          setStatus('Tâche SPHAIRA déplacée.');
+          setStatus(isObjective ? 'Objectif SPHAIRA déplacé.' : 'Tâche SPHAIRA déplacée.');
           return;
         }
         await waitForGapiReady();
@@ -1015,7 +1019,8 @@
             const d0 = startOfDay(day);
             return s <= endOfDay(day) && e >= d0; // overlap day
           }).slice(0,5).forEach(ev=>{
-            const div = document.createElement('div'); div.className='event';
+            const div = document.createElement('div');
+            div.className='event' + (ev.isObjective ? ' objective' : '');
             const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
             div.innerHTML = `<div style="display:flex; gap:6px; align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
             setupEventInteractions(div, ev);
@@ -1049,7 +1054,8 @@
               const s = ev.startDate; const e = ev.endDate || ev.startDate;
               return s <= endOfDay(d) && e >= startOfDay(d);
             }).slice(0,4).forEach(ev=>{
-              const div=document.createElement('div'); div.className='event';
+              const div=document.createElement('div');
+              div.className='event' + (ev.isObjective ? ' objective' : '');
               const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
               div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>`;
               setupEventInteractions(div, ev);
@@ -1074,7 +1080,7 @@
           const s = ev.startDate; const e = ev.endDate || ev.startDate;
           return s <= endOfDay(d) && e >= startOfDay(d);
         }).forEach(ev=>{
-          const div=document.createElement('div'); div.className='event';
+          const div=document.createElement('div'); div.className='event' + (ev.isObjective ? ' objective' : '');
           const endDisplay = ev.endDate || ev.startDate;
           const when = ev.allDay ? 'Journée' : `${ev.startDate.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})} → ${endDisplay.toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`;
           div.innerHTML = `<div style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${ev.color}"></span><strong>${escapeHtml(ev.summary)}</strong></div><div class="when">${when} — ${escapeHtml(ev.calName)}</div>${ev.location?`<div class="when">📍 ${escapeHtml(ev.location)}</div>`:''}`;
@@ -1091,7 +1097,12 @@
     function openEventModal({ existing=null, start=null, end=null, allDay=false }){
       currentEvent = existing;
       const isSphaira = !!existing?.isSphaira;
-      evtTitle.textContent = existing ? (isSphaira ? 'Modifier la tâche' : 'Modifier l’événement') : 'Nouvel événement';
+      const isObjective = !!existing?.isObjective;
+      if(existing){
+        evtTitle.textContent = isObjective ? 'Modifier l’objectif' : (isSphaira ? 'Modifier la tâche' : 'Modifier l’événement');
+      }else{
+        evtTitle.textContent = isObjective ? 'Nouvel objectif' : 'Nouvel événement';
+      }
       deleteEventBtn.style.display = existing ? '' : 'none';
 
       if(isSphaira){
@@ -1183,6 +1194,7 @@
         const location = fLocation.value;
 
         if(currentEvent?.isSphaira){
+          const isObjective = !!currentEvent?.isObjective;
           if(allDay){
             const startDateStr = startValue.slice(0,10);
             const endDateStr = endValue.slice(0,10);
@@ -1199,7 +1211,7 @@
               startDate: toDateOnlyString(startDay),
               endDate: toDateOnlyString(endDay)
             });
-            if(!ok){ alert('Impossible de mettre à jour la tâche SPHAIRA.'); return; }
+            if(!ok){ alert(isObjective ? 'Impossible de mettre à jour l’objectif SPHAIRA.' : 'Impossible de mettre à jour la tâche SPHAIRA.'); return; }
           }else{
             const start = toDate(startValue);
             const end = toDate(endValue);
@@ -1213,12 +1225,12 @@
               startISO: start.toISOString(),
               endISO: end.toISOString()
             });
-            if(!ok){ alert('Impossible de mettre à jour la tâche SPHAIRA.'); return; }
+            if(!ok){ alert(isObjective ? 'Impossible de mettre à jour l’objectif SPHAIRA.' : 'Impossible de mettre à jour la tâche SPHAIRA.'); return; }
           }
           if(!persistSphairaWorkspace()){ alert('Impossible d’enregistrer les modifications SPHAIRA.'); return; }
           renderTasks();
           closeEventModal();
-          setStatus('Tâche SPHAIRA enregistrée.');
+          setStatus(isObjective ? 'Objectif SPHAIRA enregistré.' : 'Tâche SPHAIRA enregistrée.');
           return;
         }
         const base = {
@@ -1257,15 +1269,16 @@
     deleteEventBtn.onclick = async ()=>{
       if(!currentEvent) return;
       const isSphaira = !!currentEvent.isSphaira;
-      const confirmed = confirm(isSphaira ? 'Supprimer cette tâche ?' : 'Supprimer cet événement ?');
+      const isObjective = !!currentEvent.isObjective;
+      const confirmed = confirm(isSphaira ? (isObjective ? 'Supprimer cet objectif ?' : 'Supprimer cette tâche ?') : 'Supprimer cet événement ?');
       if(!confirmed) return;
       if(isSphaira){
         const removed = deleteSphairaTask(currentEvent);
-        if(!removed){ alert('Impossible de supprimer cette tâche SPHAIRA.'); return; }
+        if(!removed){ alert(isObjective ? 'Impossible de supprimer cet objectif SPHAIRA.' : 'Impossible de supprimer cette tâche SPHAIRA.'); return; }
         if(!persistSphairaWorkspace()){ alert('Impossible d’enregistrer les modifications SPHAIRA.'); return; }
         closeEventModal();
         renderTasks();
-        setStatus('Tâche SPHAIRA supprimée.');
+        setStatus(isObjective ? 'Objectif SPHAIRA supprimé.' : 'Tâche SPHAIRA supprimée.');
         return;
       }
       try{
@@ -1324,18 +1337,18 @@
     function normalizeTask(task, meta={}){
       const title = task?.title || task?.name || '(Sans titre)';
       const desc = task?.desc || task?.description || '';
-      const start = task?.start || task?.startDate || task?.dueDate || '';
-      const end = task?.end || task?.endDate || task?.dueDate || '';
-      const status = task?.status || meta.status || '';
+      const start = task?.start || task?.startDate || task?.dueDate || task?.targetDate || task?.deadline || task?.date || '';
+      const end = task?.end || task?.endDate || task?.dueDate || task?.targetDate || task?.deadline || task?.date || '';
+      const status = task?.status || task?.state || task?.progress || meta.status || '';
       const location = task?.location || task?.place || '';
       const fields = {
         title: gatherFieldNames(task, ['title','name'], 'title'),
         desc: gatherFieldNames(task, ['desc','description'], 'desc'),
         location: gatherFieldNames(task, ['location','place'], location ? 'location' : ''),
-        start: gatherFieldNames(task, ['start','startDate'], 'start'),
-        end: gatherFieldNames(task, ['end','endDate','dueDate'], 'end'),
-        status: gatherFieldNames(task, ['status'], status ? 'status' : ''),
-        color: gatherFieldNames(task, ['color'], '')
+        start: gatherFieldNames(task, ['start','startDate','from','start_time','startTime','begin','targetDate','deadline','date'], 'start'),
+        end: gatherFieldNames(task, ['end','endDate','dueDate','to','end_time','endTime','targetDate','deadline','date'], 'end'),
+        status: gatherFieldNames(task, ['status','state','progress'], status ? 'status' : ''),
+        color: gatherFieldNames(task, ['color','highlight'], '')
       };
       if(!fields.end.length){ fields.end = ['end']; }
       if(!fields.start.length){ fields.start = ['start']; }
@@ -1349,6 +1362,7 @@
         location,
         nodeName: meta.nodeName || '',
         color: task?.color || meta.color || '#00EAFF',
+        kind: meta.kind || 'task',
         _source: task,
         _container: meta.container || null,
         _index: meta.index ?? null,
@@ -1366,11 +1380,20 @@
           tasks.push(normalizeTask(t, { ...meta, container:list, index, storageKey }));
         });
       };
+      const pushObjectives = (list, meta={})=>{
+        if(!Array.isArray(list)) return;
+        const baseMeta = { ...meta };
+        if(!baseMeta.color){ baseMeta.color = '#39ff14'; }
+        pushTasks(list, { ...baseMeta, kind:'objective' });
+      };
       if(Array.isArray(ws)){
         pushTasks(ws, { storageKey });
       }
       if(Array.isArray(ws.tasks)){
         pushTasks(ws.tasks, { storageKey });
+      }
+      if(Array.isArray(ws.objectives)){
+        pushObjectives(ws.objectives, { storageKey, prefix:'objective', nodeName:'Objectifs' });
       }
       if(Array.isArray(ws.nodes)){
         const nodes = Object.fromEntries(ws.nodes.map(n=>[n.id, {
@@ -1388,6 +1411,9 @@
             nodeIndex
           };
           pushTasks(list, meta);
+          if(Array.isArray(n.objectives)){
+            pushObjectives(n.objectives, { storageKey, prefix: `node-${n.id}-objective`, nodeName: nodes[n.id]?.name || n.id, color: nodes[n.id]?.color });
+          }
         });
       }
       const collections = ['columns','lists'];
@@ -1403,6 +1429,9 @@
             };
             const tasksList = Array.isArray(col.tasks) ? col.tasks : Array.isArray(col.cards) ? col.cards : null;
             pushTasks(tasksList, { ...meta, container: tasksList, colIndex });
+            if(Array.isArray(col.objectives)){
+              pushObjectives(col.objectives, { ...meta, prefix: `${key}-${col.id||col.name||'col'}-objective`, nodeName: meta.nodeName || 'Objectifs' });
+            }
           });
         }
       });
@@ -1416,6 +1445,14 @@
             storageKey,
             container: boardTasks
           });
+          if(Array.isArray(board.objectives)){
+            pushObjectives(board.objectives, {
+              storageKey,
+              prefix: `board-${board.id||board.name||'board'}-objective`,
+              nodeName: board.name || board.title || 'Objectifs',
+              color: board.color
+            });
+          }
           collections.forEach(key=>{
             if(Array.isArray(board[key])){
               board[key].forEach((col, colIndex)=>{
@@ -1428,6 +1465,13 @@
                 };
                 const list = Array.isArray(col.tasks) ? col.tasks : Array.isArray(col.cards) ? col.cards : null;
                 pushTasks(list, { ...meta, container:list, boardIndex, colIndex });
+                if(Array.isArray(col.objectives)){
+                  pushObjectives(col.objectives, {
+                    ...meta,
+                    prefix: `${key}-${board.id||board.name||'board'}-${col.id||col.name||'col'}-objective`,
+                    nodeName: meta.nodeName || board.name || 'Objectifs'
+                  });
+                }
               });
             }
           });
@@ -1448,14 +1492,16 @@
       const displayEnd = allDay ? addDays(endDateRaw, -1) : endDateRaw;
       const startRaw = allDay ? toDateOnlyString(startDate) : startDate.toISOString();
       const endRaw = allDay ? toDateOnlyString(endDateRaw) : endDateRaw.toISOString();
-      const context = ['Tâches SPHAIRA'];
+      const isObjective = task.kind === 'objective';
+      const context = [isObjective ? 'Objectifs SPHAIRA' : 'Tâches SPHAIRA'];
       if(task.nodeName){ context.push(task.nodeName); }
       if(task.status){ context.push(task.status); }
+      const baseColor = task.color || (isObjective ? '#39ff14' : SPHAIRA_CALENDAR.backgroundColor);
       return {
         id: task.id,
         calId: SPHAIRA_CALENDAR_ID,
         calName: context.join(' · '),
-        color: task.color || SPHAIRA_CALENDAR.backgroundColor,
+        color: baseColor,
         summary: task.title || '(Sans titre)',
         location: task.location || '',
         description: task.desc || '',
@@ -1467,6 +1513,7 @@
         hangoutLink: '',
         recurring: false,
         isSphaira: true,
+        isObjective,
         raw: { task }
       };
     }
@@ -1606,14 +1653,17 @@
       }
 
       if(!list.length){
-        taskListEl.innerHTML = '<div class="status">Aucune tâche trouvée.</div>';
+        taskListEl.innerHTML = '<div class="status">Aucune tâche ou objectif trouvé.</div>';
       }else{
         taskListEl.innerHTML = '';
         list.forEach(t=>{
           const el = document.createElement('div');
-          el.className='task';
+          const isObjective = t.kind === 'objective';
+          const badge = isObjective ? '<span class="badge-objective">Objectif</span><br/>' : '';
+          el.className='task' + (isObjective ? ' objective' : '');
           el.innerHTML = `<span class="dot" style="background:${t.color}"></span>
             <div>
+              ${badge}
               <div><strong>${escapeHtml(t.title)}</strong></div>
               ${t.status ? `<small>Statut : ${escapeHtml(t.status)}</small><br/>` : ''}
               ${t.start || t.end ? `<small>${t.start ? 'Du '+escapeHtml(t.start) : ''} ${t.end ? ' au '+escapeHtml(t.end) : ''}</small><br/>` : ''}
