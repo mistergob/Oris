@@ -1351,6 +1351,28 @@
       if(value === undefined || value === null) return '';
       if(typeof value === 'string'){
         const trimmed = value.trim();
+        if(!trimmed) return '';
+        const dateTimeMatch = trimmed.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{4})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+        if(dateTimeMatch){
+          const [, dd, mm, yyyy, hh, min, ss] = dateTimeMatch;
+          const day = Number(dd);
+          const month = Number(mm);
+          const year = Number(yyyy);
+          if(day >= 1 && day <= 31 && month >= 1 && month <= 12){
+            const isoDate = `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            if(hh !== undefined && min !== undefined){
+              const hour = Number(hh);
+              const minute = Number(min);
+              const second = ss !== undefined ? Number(ss) : null;
+              if(hour >= 0 && hour < 24 && minute >= 0 && minute < 60 && (second === null || (second >= 0 && second < 60))){
+                const time = `${String(hour).padStart(2,'0')}:${String(minute).padStart(2,'0')}` + (second !== null ? `:${String(second).padStart(2,'0')}` : '');
+                return `${isoDate}T${time}`;
+              }
+            }else{
+              return isoDate;
+            }
+          }
+        }
         return trimmed;
       }
       if(typeof value === 'number' && Number.isFinite(value)){
@@ -1365,7 +1387,7 @@
       if(typeof value === 'object'){
         for(const key of NESTED_DATE_VALUE_KEYS){
           if(value && typeof value[key] === 'string' && value[key].trim()){
-            return value[key].trim();
+            return coerceDateInput(value[key]);
           }
         }
         if(typeof value.year === 'number' && typeof value.month === 'number' && typeof value.day === 'number'){
