@@ -1334,19 +1334,75 @@
       }
       return names;
     }
+    const TASK_START_FIELD_CANDIDATES = [
+      'start','startDate','start_date','from','start_time','startTime','begin','beginDate','begin_date',
+      'targetDate','target_date','objectiveDate','objective_date','goalDate','goal_date',
+      'deadline','deadlineDate','deadline_date','date','dueDate','due_date',
+      'startAt','start_at','plannedStart','planned_start','expectedStart','expected_start'
+    ];
+    const TASK_END_FIELD_CANDIDATES = [
+      'end','endDate','end_date','dueDate','due_date','to','end_time','endTime',
+      'targetDate','target_date','objectiveDate','objective_date','goalDate','goal_date',
+      'deadline','deadlineDate','deadline_date','date','finish','finishDate','finish_date',
+      'plannedEnd','planned_end','expectedEnd','expected_end','completionDate','completion_date'
+    ];
+    const NESTED_DATE_VALUE_KEYS = ['date','start','end','from','to','value'];
+    function coerceDateInput(value){
+      if(value === undefined || value === null) return '';
+      if(typeof value === 'string'){
+        const trimmed = value.trim();
+        return trimmed;
+      }
+      if(typeof value === 'number' && Number.isFinite(value)){
+        const abs = Math.abs(value);
+        if(abs > 0 && abs < 1e11){
+          const d = new Date(value * 1000);
+          return Number.isNaN(d.valueOf()) ? '' : d.toISOString();
+        }
+        const d = new Date(value);
+        return Number.isNaN(d.valueOf()) ? '' : d.toISOString();
+      }
+      if(typeof value === 'object'){
+        for(const key of NESTED_DATE_VALUE_KEYS){
+          if(value && typeof value[key] === 'string' && value[key].trim()){
+            return value[key].trim();
+          }
+        }
+        if(typeof value.year === 'number' && typeof value.month === 'number' && typeof value.day === 'number'){
+          const d = new Date(value.year, Math.max(0, value.month - 1), value.day);
+          if(!Number.isNaN(d.valueOf())){
+            return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+          }
+        }
+      }
+      return '';
+    }
+    function pickDateValue(task, candidates){
+      if(!task) return '';
+      for(const key of candidates){
+        if(!key) continue;
+        if(Object.prototype.hasOwnProperty.call(task, key)){
+          const resolved = coerceDateInput(task[key]);
+          if(resolved){
+            return resolved;
+          }
+        }
+      }
+      return '';
+    }
     function normalizeTask(task, meta={}){
       const title = task?.title || task?.name || '(Sans titre)';
       const desc = task?.desc || task?.description || '';
-      const start = task?.start || task?.startDate || task?.dueDate || task?.targetDate || task?.deadline || task?.date || '';
-      const end = task?.end || task?.endDate || task?.dueDate || task?.targetDate || task?.deadline || task?.date || '';
+      const start = pickDateValue(task, TASK_START_FIELD_CANDIDATES);
+      const end = pickDateValue(task, TASK_END_FIELD_CANDIDATES);
       const status = task?.status || task?.state || task?.progress || meta.status || '';
       const location = task?.location || task?.place || '';
       const fields = {
         title: gatherFieldNames(task, ['title','name'], 'title'),
         desc: gatherFieldNames(task, ['desc','description'], 'desc'),
         location: gatherFieldNames(task, ['location','place'], location ? 'location' : ''),
-        start: gatherFieldNames(task, ['start','startDate','from','start_time','startTime','begin','targetDate','deadline','date'], 'start'),
-        end: gatherFieldNames(task, ['end','endDate','dueDate','to','end_time','endTime','targetDate','deadline','date'], 'end'),
+        start: gatherFieldNames(task, TASK_START_FIELD_CANDIDATES, 'start'),
+        end: gatherFieldNames(task, TASK_END_FIELD_CANDIDATES, 'end'),
         status: gatherFieldNames(task, ['status','state','progress'], status ? 'status' : ''),
         color: gatherFieldNames(task, ['color','highlight'], '')
       };
